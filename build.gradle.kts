@@ -32,6 +32,7 @@ repositories {
     maven("https://repo.viaversion.com")
     //maven("https://maven.evokegames.gg/snapshots")
     maven("https://repo.alessiodp.com/releases")
+    maven("https://repo.alessiodp.com/snapshots")
     maven("https://maven.typewritermc.com/beta")
     maven("https://repo.nexomc.com/snapshots/")
     maven("https://repo.nexomc.com/releases")
@@ -40,6 +41,9 @@ repositories {
     maven {
         name = "feather-repo"
         url = uri("https://repo.feathermc.net/artifactory/maven-releases")
+        mavenContent {
+            releasesOnly()
+        }
     }
     maven {
         name = "labymod"

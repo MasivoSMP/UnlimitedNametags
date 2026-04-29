@@ -73,13 +73,24 @@ public class PacketNameTag {
     }
 
     private Function<User, WrapperEntity> getBaseSupplier() {
-        return user -> {
-            final WrapperEntity wrapper = new WrapperEntity(entityId, entityIdUuid, EntityTypes.TEXT_DISPLAY);
-            final TextDisplayMeta meta = (TextDisplayMeta) wrapper.getEntityMeta();
-            meta.setLineWidth(1000);
-            meta.setNotifyAboutChanges(false);
-            return wrapper;
-        };
+        return user -> createBaseEntity();
+    }
+
+    private WrapperEntity createBaseEntity() {
+        final WrapperEntity wrapper = new WrapperEntity(entityId, entityIdUuid, EntityTypes.TEXT_DISPLAY);
+        final TextDisplayMeta meta = (TextDisplayMeta) wrapper.getEntityMeta();
+        meta.setLineWidth(1000);
+        meta.setNotifyAboutChanges(false);
+        return wrapper;
+    }
+
+    @Nullable
+    private WrapperEntity getOrCreateEntity(@Nullable User user) {
+        if (user == null) {
+            return null;
+        }
+
+        return perPlayerEntity.getEntities().computeIfAbsent(user.getUUID(), ignored -> createBaseEntity());
     }
 
     public boolean text(@NotNull Player player, @NotNull Component text) {
@@ -251,14 +262,22 @@ public class PacketNameTag {
             return;
         }
 
-        if (!player.getUniqueId().equals(owner.getUniqueId())) {
-            WrapperEntity entity = perPlayerEntity.getEntityOf(getUser(player));
-            if (entity != null) {
-                applyOwnerData(entity);
-            }
+        final User user = getUser(player);
+        if (user == null) {
+            return;
         }
 
-        spawn(player);
+        final WrapperEntity entity = getOrCreateEntity(user);
+        if (entity == null) {
+            return;
+        }
+
+        if (!player.getUniqueId().equals(owner.getUniqueId())) {
+            applyOwnerData(entity);
+        }
+
+        this.visible = true;
+        entity.spawn(SpigotConversionUtil.fromBukkitLocation(getOffsetLocation()));
 
         if (isOwner(player) && plugin.getConfigManager().getSettings().isShowCurrentNameTag()) {
             setOwnerPosition();
@@ -266,7 +285,7 @@ public class PacketNameTag {
             setPosition();
         }
 
-        perPlayerEntity.addViewer(getUser(player));
+        entity.addViewer(user);
 
         updateViewer(player.getUniqueId());
 
@@ -496,7 +515,12 @@ public class PacketNameTag {
             return;
         }
 
-        modifyEntity(user, e -> e.spawn(SpigotConversionUtil.fromBukkitLocation(getOffsetLocation())));
+        final WrapperEntity entity = getOrCreateEntity(user);
+        if (entity == null) {
+            return;
+        }
+
+        entity.spawn(SpigotConversionUtil.fromBukkitLocation(getOffsetLocation()));
     }
 
     public void refresh() {
@@ -519,7 +543,10 @@ public class PacketNameTag {
             return;
         }
 
-        perPlayerEntity.getEntityOf(user).refresh();
+        final WrapperEntity entity = perPlayerEntity.getEntityOf(user);
+        if (entity != null) {
+            entity.refresh();
+        }
     }
 
     public void remove() {
@@ -566,12 +593,21 @@ public class PacketNameTag {
 
     private void applyOwnerData(@NotNull WrapperEntity wrapper) {
         final User ownerUser = PacketEvents.getAPI().getPlayerManager().getUser(owner);
+        if (ownerUser == null) {
+            return;
+        }
+
+        final WrapperEntity ownerEntity = perPlayerEntity.getEntityOf(ownerUser);
+        if (ownerEntity == null) {
+            return;
+        }
+
         final Metadata metadata = wrapper.getEntityMeta().getMetadata();
         final Optional<EntityData<?>> component = wrapper.getEntityMeta().entityData()
                 .stream()
                 .filter(e -> e.getType() == EntityDataTypes.ADV_COMPONENT)
                 .findFirst();
-        final Metadata ownerMetadata = perPlayerEntity.getEntityOf(ownerUser).getEntityMeta().getMetadata();
+        final Metadata ownerMetadata = ownerEntity.getEntityMeta().getMetadata();
         metadata.copyFrom(ownerMetadata);
         component.ifPresent(entityData -> ((TextDisplayMeta) wrapper.getEntityMeta()).setText((Component) entityData.getValue()));
         metadata.setNotifyAboutChanges(false);
@@ -580,7 +616,12 @@ public class PacketNameTag {
     @NotNull
     public Map<String, String> properties() {
         final Map<String, String> properties = new LinkedHashMap<>();
-        final TextDisplayMeta meta = (TextDisplayMeta) this.perPlayerEntity.getEntityOf(PacketEvents.getAPI().getPlayerManager().getUser(owner)).getEntityMeta();
+        final User ownerUser = PacketEvents.getAPI().getPlayerManager().getUser(owner);
+        final WrapperEntity ownerEntity = getOrCreateEntity(ownerUser);
+        if (ownerEntity == null) {
+            return properties;
+        }
+        final TextDisplayMeta meta = (TextDisplayMeta) ownerEntity.getEntityMeta();
         properties.put("text", MiniMessage.miniMessage().serialize(meta.getText()));
         properties.put("billboard", meta.getBillboardConstraints().name());
         properties.put("shadowed", String.valueOf(meta.isShadow()));

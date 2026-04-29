@@ -27,6 +27,7 @@ import org.alexdev.unlimitednametags.placeholders.PlaceholderManager;
 import org.alexdev.unlimitednametags.vanish.VanishManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
@@ -228,13 +229,13 @@ public final class UnlimitedNameTags extends JavaPlugin {
             getLogger().info("ViaVersion found, hooking into it");
         }
 
-        if (Bukkit.getPluginManager().isPluginEnabled("geyser")) {
+        if (isPluginEnabledAny("geyser", "Geyser", "Geyser-Spigot")) {
             final GeyserHook hook = new GeyserHook(this);
             hooks.put(GeyserHook.class, hook);
             getLogger().info("Geyser found, hooking into it");
         }
 
-        if (Bukkit.getPluginManager().isPluginEnabled("floodgate")) {
+        if (isPluginEnabledAny("floodgate", "Floodgate")) {
             final FloodgateHook hook = new FloodgateHook(this);
             hooks.put(FloodgateHook.class, hook);
             getLogger().info("Floodgate found, hooking into it");
@@ -266,6 +267,28 @@ public final class UnlimitedNameTags extends JavaPlugin {
 //        }
 
         hooks.values().forEach(Hook::onEnable);
+    }
+
+    private boolean isPluginEnabledAny(@NotNull String... names) {
+        final var pluginManager = Bukkit.getPluginManager();
+        for (final String name : names) {
+            if (pluginManager.isPluginEnabled(name)) {
+                return true;
+            }
+        }
+
+        for (final Plugin plugin : pluginManager.getPlugins()) {
+            if (!plugin.isEnabled()) {
+                continue;
+            }
+
+            for (final String name : names) {
+                if (plugin.getName().equalsIgnoreCase(name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void loadCommands() {
@@ -314,6 +337,14 @@ public final class UnlimitedNameTags extends JavaPlugin {
 
     public <H extends Hook> Optional<H> getHook(@NotNull Class<H> hookType) {
         return Optional.ofNullable(hooks.get(hookType)).map(hookType::cast);
+    }
+
+    public boolean isBedrockPlayer(@NotNull Player player) {
+        if (getHook(FloodgateHook.class).map(hook -> hook.isFloodgatePlayer(player)).orElse(false)) {
+            return true;
+        }
+
+        return getHook(GeyserHook.class).map(hook -> hook.isBedrockPlayer(player)).orElse(false);
     }
 
     @Override
