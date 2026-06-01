@@ -1,7 +1,7 @@
 [versions]
 paperApiVersion = "1.21.4-R0.1-SNAPSHOT"
 adventureApiVersion = "4.16.0"
-typeWriterVersion = "0.9.0"
+typeWriterVersion = "0.8.0"
 lombokVersion = "1.18.30"
 placeholderapiVersion = "2.11.6"
 miniplaceholdersApiVersion = "3.0.1"
