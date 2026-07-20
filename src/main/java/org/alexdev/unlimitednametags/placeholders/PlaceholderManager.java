@@ -37,6 +37,9 @@ public class PlaceholderManager {
     public static final String NEG_PHASE_MM_G_KEY = "-phase-mm-g";
 
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("%.*?%", Pattern.DOTALL);
+    private static final Pattern MASIVO_AURA_USERNAME_COLOR_PLAYER_PATTERN = Pattern.compile(
+            "(?i)%masivoaura_username_color%\\s*%player_name%"
+    );
     private static final JoinConfiguration JOIN_CONFIGURATION = JoinConfiguration.separator(Component.newline());
 
     private static final String ELSE_PLACEHOLDER = "ELSE";
@@ -286,6 +289,7 @@ public class PlaceholderManager {
         if (!containsAnyPlaceholders(string)) {
             return string;
         }
+        string = normalizeMasivoAuraUsernamePlaceholder(string);
 
         final StringBuilder builder = new StringBuilder(string.length() + 32); // Pre-allocate extra space
         final Matcher matcher = PLACEHOLDER_PATTERN.matcher(string);
@@ -311,6 +315,14 @@ public class PlaceholderManager {
         }
 
         return intermediateResult;
+    }
+
+    @NotNull
+    private String normalizeMasivoAuraUsernamePlaceholder(@NotNull String string) {
+        if (string.toLowerCase(Locale.ROOT).indexOf("%masivoaura_username_color%") == -1) {
+            return string;
+        }
+        return MASIVO_AURA_USERNAME_COLOR_PLAYER_PATTERN.matcher(string).replaceAll("%masivoaura_username%");
     }
 
     @Nullable
