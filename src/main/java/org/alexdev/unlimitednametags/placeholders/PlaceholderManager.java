@@ -37,6 +37,9 @@ public class PlaceholderManager {
     public static final String NEG_PHASE_MM_G_KEY = "-phase-mm-g";
 
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("%.*?%", Pattern.DOTALL);
+    private static final Pattern MASIVO_AURA_USERNAME_COLOR_PLAYER_PATTERN = Pattern.compile(
+            "(?i)%masivoaura_username_color%\\s*%player_name%"
+    );
     private static final JoinConfiguration JOIN_CONFIGURATION = JoinConfiguration.separator(Component.newline());
 
     private static final String ELSE_PLACEHOLDER = "ELSE";
@@ -193,12 +196,17 @@ public class PlaceholderManager {
         final Settings settings = plugin.getConfigManager().getSettings();
         final boolean removeEmptyLines = settings.isRemoveEmptyLines();
         final boolean enableRelationalPlaceholders = settings.isEnableRelationalPlaceholders();
+        final boolean masivoAuraCompat = containsMasivoAuraUsernameColorPlayer(strings);
 
         final List<String> baseStrings = papiManager.isPapiEnabled() ?
                 strings.stream()
-                        .map(s -> replacePlaceholders(s, player, null))
+                        .map(s -> masivoAuraCompat ? s : replacePlaceholders(s, player, null))
                         .toList()
                 : strings;
+
+        if (masivoAuraCompat) {
+            return createMasivoAuraCompatibleComponents(player, strings, relationalPlayers, removeEmptyLines, hatLines);
+        }
 
         if (enableRelationalPlaceholders) {
             final Map<Player, Component> result = Maps.newHashMapWithExpectedSize(relationalPlayers.size());
@@ -231,6 +239,49 @@ public class PlaceholderManager {
             }
             return result;
         }
+    }
+
+    @NotNull
+    private Map<Player, Component> createMasivoAuraCompatibleComponents(
+            @NotNull Player player,
+            @NotNull List<String> strings,
+            @NotNull List<Player> relationalPlayers,
+            boolean removeEmptyLines,
+            @NotNull Component hatLines
+    ) {
+        Component fallbackComponent = componentFromStrings(strings.stream()
+                .map(line -> replacePlaceholders(line, player, null, false))
+                .toList(), player, removeEmptyLines, hatLines);
+
+        final Map<Player, Component> result = Maps.newHashMapWithExpectedSize(relationalPlayers.size());
+        for (Player viewer : relationalPlayers) {
+            if (plugin.isBedrockPlayer(viewer)) {
+                result.put(viewer, fallbackComponent);
+                continue;
+            }
+
+            Component javaComponent = componentFromStrings(strings.stream()
+                    .map(line -> replaceMasivoAuraJavaPlaceholders(line, player))
+                    .toList(), player, removeEmptyLines, hatLines);
+            result.put(viewer, javaComponent);
+        }
+        return result;
+    }
+
+    @NotNull
+    private Component componentFromStrings(
+            @NotNull List<String> strings,
+            @NotNull Player player,
+            boolean removeEmptyLines,
+            @NotNull Component hatLines
+    ) {
+        List<Component> processedLines = strings.stream()
+                .filter(s -> !removeEmptyLines || !s.isEmpty())
+                .map(this::formatPhases)
+                .map(line -> format(line, player))
+                .filter(c -> !removeEmptyLines || !c.equals(Component.empty()))
+                .toList();
+        return joinLines(processedLines).append(hatLines);
     }
 
     private Component joinLines(List<Component> lines) {
@@ -283,8 +334,21 @@ public class PlaceholderManager {
 
     @NotNull
     private String replacePlaceholders(@NotNull String string, @NotNull Player player, @Nullable Player viewer) {
+        return replacePlaceholders(string, player, viewer, shouldNormalizeMasivoAuraUsernamePlaceholder(viewer));
+    }
+
+    @NotNull
+    private String replacePlaceholders(
+            @NotNull String string,
+            @NotNull Player player,
+            @Nullable Player viewer,
+            boolean normalizeMasivoAuraUsername
+    ) {
         if (!containsAnyPlaceholders(string)) {
             return string;
+        }
+        if (normalizeMasivoAuraUsername) {
+            string = normalizeMasivoAuraUsernamePlaceholder(string);
         }
 
         final StringBuilder builder = new StringBuilder(string.length() + 32); // Pre-allocate extra space
@@ -311,6 +375,36 @@ public class PlaceholderManager {
         }
 
         return intermediateResult;
+    }
+
+    @NotNull
+    private String replaceMasivoAuraJavaPlaceholders(@NotNull String string, @NotNull Player player) {
+        if (!containsAnyPlaceholders(string)) {
+            return string;
+        }
+        String normalized = normalizeMasivoAuraUsernamePlaceholder(string);
+        return papiManager.isPapiEnabled() ? papiManager.setPlaceholders(player, normalized) : normalized;
+    }
+
+    private boolean containsMasivoAuraUsernameColorPlayer(@NotNull List<String> strings) {
+        return strings.stream().anyMatch(this::containsMasivoAuraUsernameColorPlayer);
+    }
+
+    private boolean shouldNormalizeMasivoAuraUsernamePlaceholder(@Nullable Player viewer) {
+        return viewer == null || !plugin.isBedrockPlayer(viewer);
+    }
+
+    private boolean containsMasivoAuraUsernameColorPlayer(@NotNull String string) {
+        return string.toLowerCase(Locale.ROOT).indexOf("%masivoaura_username_color%") != -1
+                && MASIVO_AURA_USERNAME_COLOR_PLAYER_PATTERN.matcher(string).find();
+    }
+
+    @NotNull
+    private String normalizeMasivoAuraUsernamePlaceholder(@NotNull String string) {
+        if (!containsMasivoAuraUsernameColorPlayer(string)) {
+            return string;
+        }
+        return MASIVO_AURA_USERNAME_COLOR_PLAYER_PATTERN.matcher(string).replaceAll("%masivoaura_username%");
     }
 
     @Nullable
