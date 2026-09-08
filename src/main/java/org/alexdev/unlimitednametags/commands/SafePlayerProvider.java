@@ -8,8 +8,8 @@ import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import java.lang.annotation.Annotation;
 import java.util.Collections;
 import java.util.ConcurrentModificationException;
@@ -52,7 +52,7 @@ public class SafePlayerProvider extends DrinkProvider<Player> {
 
     @Nullable
     @Override
-    public Player provide(@Nonnull CommandArg arg, @Nonnull List<? extends Annotation> annotations) throws CommandExitMessage {
+    public Player provide(@NotNull CommandArg arg, @NotNull List<? extends Annotation> annotations) throws CommandExitMessage {
         String name = arg.get();
         Player player = plugin.getServer().getPlayerExact(name);
         if (player != null) {
@@ -72,7 +72,7 @@ public class SafePlayerProvider extends DrinkProvider<Player> {
     }
 
     @Override
-    public List<String> getSuggestions(@Nonnull String prefix) {
+    public List<String> getSuggestions(@NotNull String prefix) {
         final String finalPrefix = prefix.toLowerCase();
 
         try {
