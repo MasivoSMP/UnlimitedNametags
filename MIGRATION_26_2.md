@@ -62,3 +62,8 @@ Final built artifacts (root C:/Users/CHESV/Documents/GitHub/Masivo-26.2/Unlimite
 Runtime gates all NOT RUN: full accepted Pinac boot with PacketEvents/metrics; player join/quit/rejoin and repeated reload; entity-ID allocation under region ownership; display spawn/metadata/passenger ordering/scale/sneak/elytra/camera/teleport and permission/vanish visibility; MasivoAura set/clear/refresh including shader styles and Bedrock fallback; old settings.yml/advanced.yml and optional providers present/absent; HMCCosmetics hat/backpack and resource-pack height reading; ViaVersion/Geyser/Floodgate client combinations. No production/server/world/SQL/data access or deployment. Build/regression acceptance does not certify these gates.
 
 Git delivery: review918da93 pushed first; implementation1517cb44625dc8c50e40b0eca8144c8c06712be5 committed the coherent checked source/build/report group and explicit git push -u origin HEAD:refs/heads/dev-26.2 succeeded. git ls-remote origin refs/heads/dev-26.2 matched that HEAD and git status --short --branch was clean. This final report-only checkpoint records delivery; no artifact rebuild is needed for report-only changes. Original main remains be532707bf72d50be8cacd4deb776c81d914e60e, clean; no original source edits. Final artifact handoff sent to Aura owner for its resolver linkage check. No development blocker remains; runtime gates above remain NOT RUN.
+
+## PR review dependency reconciliation
+
+Updated the accepted HMCCosmetics common.jar SHA256 to 54af83f1a4f0b04b86519200cf128748d2a670f8f2068e16ac37e6e7350cc046 after its main-branch reconciliation. Java 25 full build and migrationCheck pass, including EntityLib startup/provider, legacy Aura signatures and target packaging checks.
+

@@ -251,7 +251,7 @@ val migrationCheck by tasks.registering(JavaExec::class) {
         val expected = mapOf(
             "pinac-api-26.2-local.jar" to "1952d473fb3a4b57a227962759ac8776b8e28eacda000196ef62609f8239b4ee",
             "packetevents-spigot-2.13.0.jar" to "2d93faaf2ca724df6cd3b73cbe3c5c4b9361ee527f16f478c70754eacc0c969c",
-            "common.jar" to "d46cc9982db3a73b1dd7dca772cfffcbee9e5e6d8154a85dd84c045352332c7b"
+            "common.jar" to "54af83f1a4f0b04b86519200cf128748d2a670f8f2068e16ac37e6e7350cc046"
         )
         expected.forEach { (name, hash) ->
             val input = sourceSets.main.get().compileClasspath.single { it.name == name }
