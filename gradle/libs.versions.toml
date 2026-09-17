@@ -1,8 +1,8 @@
 [versions]
-paperApiVersion = "1.21.4-R0.1-SNAPSHOT"
+paperApiVersion = "26.2-local"
 adventureApiVersion = "4.16.0"
 typeWriterVersion = "0.8.0"
-lombokVersion = "1.18.30"
+lombokVersion = "1.18.40"
 placeholderapiVersion = "2.11.6"
 miniplaceholdersApiVersion = "3.0.1"
 floodgateApiVersion = "2.2.3-SNAPSHOT"
@@ -11,8 +11,8 @@ commonsLangVersion = "3.14.0"
 configlibVersion = "4.6.1"
 minedownAdventureVersion = "1.7.2-SNAPSHOT"
 drinkVersion = "1.5.3"
-entityLibVersion = "3.0.3-SNAPSHOT"
-packeteventsSpigotVersion = "2.10.0-SNAPSHOT"
+entityLibVersion = "3.3.3-20260607.144504-1"
+packeteventsSpigotVersion = "2.13.0"
 universalSchedulerVersion = "0.1.6"
 viaVersionApiVersion = "5.0.1"
 libbyBukkitVersion = "2.0.0-SNAPSHOT"
@@ -31,7 +31,7 @@ labymodVersion = "1.0.6"
 hmcCosmetics = "2.8.2-fed13b8e"
 
 [libraries]
-paperApi = { module = "io.papermc.paper:paper-api", version.ref = "paperApiVersion" }
+paperApi = { module = "io.canvasmc.pinac:pinac-api", version.ref = "paperApiVersion" }
 adventureApi = { module = "net.kyori:adventure-api", version.ref = "adventureApiVersion" }
 typeWriter = { module = "com.typewritermc:engine-paper", version.ref = "typeWriterVersion" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombokVersion" }

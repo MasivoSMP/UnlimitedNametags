@@ -1,9 +1,9 @@
+import java.security.MessageDigest
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
-    id("com.gradleup.shadow") version "8.3.2"
+    id("com.gradleup.shadow") version "9.2.1"
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.0.0"
     id("xyz.jpenilla.run-paper") version "2.3.1"
 }
 
@@ -11,7 +11,12 @@ group = "org.alexdev"
 version = property("version") as String
 
 repositories {
+    exclusiveContent {
+        forRepository { maven("https://maven.pvphub.me/tofaa") }
+        filter { includeGroup("io.github.tofaa2") }
+    }
     mavenCentral()
+    mavenLocal { content { includeGroup("io.canvasmc.pinac") } }
     maven("https://repo.papermc.io/repository/maven-public/")
     maven("https://repo.nexomc.com/snapshots/")
     maven("https://oss.sonatype.org/content/groups/public/")
@@ -56,12 +61,15 @@ repositories {
 dependencies {
 
     compileOnly(libs.paperApi)
-    compileOnly(libs.adventureApi)
-    implementation(libs.entityLib)
+
+    implementation(libs.entityLib) {
+        exclude(group = "com.github.retrooper")
+    }
     compileOnly(libs.typeWriter) {
         exclude(group = "io.papermc.paper") // Exclude Paper API
         exclude(group = "com.github.Tofaa2.EntityLib") // Exclude EntityLib
         exclude(group = "me.tofaa.entitylib") // Exclude EntityLib
+        exclude(group = "me.tofaa2") // Upstream cb69d53: Typewriter brings another EntityLib copy
     }
     compileOnly(libs.placeholderapi)
     compileOnly(libs.miniplaceholdersApi)
@@ -81,7 +89,7 @@ dependencies {
     compileOnly(libs.creative.rp)
     compileOnly(libs.creative.serializer)
     compileOnly(libs.libs.disguises)
-    compileOnly(libs.hmcCosmetics)
+    compileOnly(files("../HMCCosmetics/common/build/libs/common.jar"))
 
     implementation(libs.drink)
     implementation(libs.universalScheduler)
@@ -139,7 +147,7 @@ tasks.named<ShadowJar>("shadowJar") {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
-    options.release.set(17)
+    options.release.set(25)
 
 }
 tasks.withType<Javadoc> {
@@ -147,14 +155,12 @@ tasks.withType<Javadoc> {
 }
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
 
     disableAutoTargetJvm()
 }
 
-kotlin {
-    jvmToolchain(21)
-}
+
 
 tasks.named<Jar>("jar").configure {
     dependsOn("shadowJar")
@@ -173,7 +179,7 @@ tasks.jar {
 
 tasks {
     runServer {
-        minecraftVersion("1.21.11")
+        minecraftVersion("26.2")
 
         downloadPlugins {
             hangar("PlaceholderAPI", "2.11.6")
@@ -181,18 +187,18 @@ tasks {
             modrinth("multiverse-core", "4.3.14")
             github("MiniPlaceholders", "MiniPlaceholders", "3.0.1", "MiniPlaceholders-Paper-3.0.1.jar")
 //            github("retrooper", "packetevents", "v2.9.4", "packetevents-spigot-2.9.4.jar")
-            url("https://ci.codemc.io/job/retrooper/job/packetevents/796/artifact/build/libs/packetevents-spigot-2.11.1-SNAPSHOT.jar")
+            url("https://github.com/retrooper/packetevents/releases/download/v2.13.0/packetevents-spigot-2.13.0.jar")
             github("MilkBowl", "Vault", "1.7.3", "Vault.jar")
             github("FeatherMC", "feather-server-api", "v0.0.5", "feather-server-api-0.0.5-bukkit.jar")
             github("LabyMod", "labymod4-server-api", "1.0.6", "labymod-server-api-bukkit-1.0.6.jar")
         }
     }
     runPaper.folia.registerTask {
-        minecraftVersion("1.21.11")
+        minecraftVersion("26.2")
 
         downloadPlugins {
             github("Anon8281", "PlaceholderAPI", "2.11.7", "PlaceholderAPI-2.11.7-DEV-Folia.jar")
-            url("https://ci.codemc.io/job/retrooper/job/packetevents/796/artifact/build/libs/packetevents-spigot-2.11.1-SNAPSHOT.jar")
+            url("https://github.com/retrooper/packetevents/releases/download/v2.13.0/packetevents-spigot-2.13.0.jar")
             github("ViaVersion", "ViaVersion", "5.4.1", "ViaVersion-5.4.1.jar")
         }
     }
@@ -224,3 +230,36 @@ tasks.processResources {
     }
 
 }
+
+// All three upstream EntityLib modules were published together; keep the selected snapshot immutable.
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.github.tofaa2") useVersion(libs.versions.entityLibVersion.get())
+    }
+}
+
+val migrationCheckSources = sourceSets.create("migrationCheck") {
+    compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
+    runtimeClasspath += output + compileClasspath
+}
+val migrationCheck by tasks.registering(JavaExec::class) {
+    dependsOn(tasks.named("shadowJar"), migrationCheckSources.classesTaskName)
+    classpath = migrationCheckSources.runtimeClasspath
+    mainClass.set("MigrationCheck")
+    enableAssertions = true
+    doFirst {
+        val expected = mapOf(
+            "pinac-api-26.2-local.jar" to "1952d473fb3a4b57a227962759ac8776b8e28eacda000196ef62609f8239b4ee",
+            "packetevents-spigot-2.13.0.jar" to "2d93faaf2ca724df6cd3b73cbe3c5c4b9361ee527f16f478c70754eacc0c969c",
+            "common.jar" to "54af83f1a4f0b04b86519200cf128748d2a670f8f2068e16ac37e6e7350cc046"
+        )
+        expected.forEach { (name, hash) ->
+            val input = sourceSets.main.get().compileClasspath.single { it.name == name }
+            check(MessageDigest.getInstance("SHA-256").digest(input.readBytes()).joinToString("") { "%02x".format(it) } == hash) {
+                "Unexpected accepted migration input: $input"
+            }
+        }
+    }
+    args(tasks.named<ShadowJar>("shadowJar").get().archiveFile.get().asFile.absolutePath)
+}
+tasks.check { dependsOn(migrationCheck) }

@@ -5,10 +5,11 @@ import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSetPassengers;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
+import org.bukkit.Bukkit;
 import me.tofaa.entitylib.APIConfig;
 import me.tofaa.entitylib.EntityLib;
 import me.tofaa.entitylib.spigot.SpigotEntityLibPlatform;
+import me.tofaa.entitylib.spigot.PinacEntityLibPlatform;
 import org.alexdev.unlimitednametags.UnlimitedNameTags;
 import org.alexdev.unlimitednametags.data.ConcurrentMultimap;
 import org.bukkit.entity.Player;
@@ -39,7 +40,7 @@ public class PacketManager {
     }
 
     private void initialize() {
-        final SpigotEntityLibPlatform platform = new SpigotEntityLibPlatform(plugin);
+        final SpigotEntityLibPlatform platform = new PinacEntityLibPlatform(plugin, this::getEntityIndex);
         final APIConfig settings = new APIConfig(PacketEvents.getAPI())
                 .usePlatformLogger();
         EntityLib.init(platform, settings);
@@ -76,7 +77,7 @@ public class PacketManager {
     }
 
     public int getEntityIndex() {
-        return SpigotReflectionUtil.generateEntityId();
+        return Bukkit.getUnsafe().nextEntityId(Bukkit.getWorlds().getFirst());
     }
 
     public void removePassenger(int passenger) {
