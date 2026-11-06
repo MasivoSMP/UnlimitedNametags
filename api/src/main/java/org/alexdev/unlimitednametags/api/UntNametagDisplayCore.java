@@ -1,0 +1,51 @@
+package org.alexdev.unlimitednametags.api;
+
+import me.tofaa.entitylib.meta.display.AbstractDisplayMeta;
+import net.kyori.adventure.text.Component;
+import org.alexdev.unlimitednametags.config.GlowOverride;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Platform-neutral display row API (viewer ids as UUID). Paper extensions: {@code UntNametagDisplay} (api-paper module).
+ */
+public interface UntNametagDisplayCore {
+
+    void setBillboard(@NotNull AbstractDisplayMeta.BillboardConstraints billboard);
+
+    void refresh();
+
+    /** Flushes metadata to every current viewer; full resync when {@code force} is true. */
+    void refreshAllViewers(boolean force);
+
+    void setForcedNameTag(@NotNull Component component);
+
+    void setForcedNameTag(@NotNull UUID viewerId, @NotNull Component component);
+
+    void clearForcedNameTag();
+
+    void clearForcedNameTag(@NotNull UUID viewerId);
+
+    void refreshForViewer(@NotNull UUID viewerId);
+
+    void refreshForViewer(@NotNull UUID viewerId, boolean force);
+
+    void showToViewer(@NotNull UUID viewerId);
+
+    void hideFromViewer(@NotNull UUID viewerId);
+
+    void showToViewers(@NotNull Set<UUID> viewerIds);
+
+    void showForOwner();
+
+    void hideForOwner();
+
+    boolean isSneaking();
+
+    void setGlowOverride(@Nullable GlowOverride glow);
+
+    void clearGlowOverride();
+}

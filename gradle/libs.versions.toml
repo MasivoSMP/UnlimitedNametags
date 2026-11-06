@@ -1,16 +1,14 @@
 [versions]
 paperApiVersion = "26.2-local"
 adventureApiVersion = "4.16.0"
-typeWriterVersion = "0.8.0"
-lombokVersion = "1.18.40"
+typeWriterVersion = "0.9.0"
+lombokVersion = "1.18.46"
 placeholderapiVersion = "2.11.6"
 miniplaceholdersApiVersion = "3.0.1"
 floodgateApiVersion = "2.2.3-SNAPSHOT"
 geyserApiVersion = "2.4.2-SNAPSHOT"
 commonsLangVersion = "3.14.0"
 configlibVersion = "4.6.1"
-minedownAdventureVersion = "1.7.2-SNAPSHOT"
-drinkVersion = "1.5.3"
 entityLibVersion = "3.3.3-20260607.144504-1"
 packeteventsSpigotVersion = "2.13.0"
 universalSchedulerVersion = "0.1.6"
@@ -23,12 +21,13 @@ nexoVersion = "1.2.0"
 oraxenVersion = "1.195.0"
 itemsAdderVersion = "3.6.1"
 gsonVersion = "2.11.0"
-creative-rp = "1.9.2-SNAPSHOT"
-creative-serializer = "1.9.2-SNAPSHOT"
+creative-rp = "1.7.3"
+creative-serializer = "1.7.3"
 libs-disguises = "11.0.0"
 featherVersion = "0.0.5"
 labymodVersion = "1.0.6"
 hmcCosmetics = "2.8.2-fed13b8e"
+snakeyamlEngineVersion = "2.7"
 
 [libraries]
 paperApi = { module = "io.canvasmc.pinac:pinac-api", version.ref = "paperApiVersion" }
@@ -42,8 +41,6 @@ geyserApi = { module = "org.geysermc.geyser:api", version.ref = "geyserApiVersio
 commonsLang = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLangVersion" }
 configlib = { module = "de.exlll:configlib-yaml", version.ref = "configlibVersion" }
 configlibPaper = { module = "de.exlll:configlib-paper", version.ref = "configlibVersion" }
-minedownAdventure = { module = "de.themoep:minedown-adventure", version.ref = "minedownAdventureVersion" }
-drink = { module = "com.github.alexdev03:drink", version.ref = "drinkVersion" }
 entityLib = { module = "io.github.tofaa2:spigot", version.ref = "entityLibVersion" }
 packeteventsSpigot = { module = "com.github.retrooper:packetevents-spigot", version.ref = "packeteventsSpigotVersion" }
 universalScheduler = { module = "com.github.Anon8281:UniversalScheduler", version.ref = "universalSchedulerVersion" }
@@ -51,6 +48,7 @@ viaVersionApi = { module = "com.viaversion:viaversion-api", version.ref = "viaVe
 libbyBukkit = { module = "com.alessiodp.libby:libby-bukkit", version.ref = "libbyBukkitVersion" }
 bstatsBukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstatsBukkitVersion" }
 expiringMap = { module = "net.jodah:expiringmap", version.ref = "expiringMapVersion" }
+snakeyamlEngine = { module = "org.snakeyaml:snakeyaml-engine", version.ref = "snakeyamlEngineVersion" }
 commonsJexl3 = { module = "org.apache.commons:commons-jexl3", version.ref = "commonsJexl3Version" }
 nexo = { module = "com.nexomc:nexo", version.ref = "nexoVersion" }
 oraxen = { module = "io.th0rgal:oraxen", version.ref = "oraxenVersion" }
