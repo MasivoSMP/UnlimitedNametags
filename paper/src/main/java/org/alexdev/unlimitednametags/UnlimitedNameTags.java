@@ -100,6 +100,7 @@ public final class UnlimitedNameTags extends JavaPlugin implements UnlimitedName
         trackerManager = new TrackerManager(this);
         nametagMaterialBridge = new BukkitNametagMaterialBridge(this);
         nametagManager = new NameTagManager(this);
+        Bukkit.getPluginManager().registerEvents(new AdminNametagVisibilityListener(this), this);
         placeholderManager = new PlaceholderManager(this);
         vanishManager = new VanishManager(this);
         packetManager = new PacketManager(this);

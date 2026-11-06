@@ -14,11 +14,13 @@ public final class NametagPlayerPreferences {
     private final NamespacedKey seeOthersKey;
     private final NamespacedKey showOwnSelfKey;
     private final NamespacedKey showOwnToOthersKey;
+    private final NamespacedKey adminHideOthersKey;
 
     public NametagPlayerPreferences(@NotNull org.bukkit.plugin.Plugin plugin) {
         this.seeOthersKey = new NamespacedKey(plugin, "pref_see_others");
         this.showOwnSelfKey = new NamespacedKey(plugin, "pref_show_own_self");
         this.showOwnToOthersKey = new NamespacedKey(plugin, "pref_show_own_to_others");
+        this.adminHideOthersKey = new NamespacedKey(plugin, "admin_hide_other_nametags");
     }
 
     public boolean readSeeOthers(@NotNull Player player) {
@@ -43,6 +45,14 @@ public final class NametagPlayerPreferences {
 
     public void writeShowOwnToOthers(@NotNull Player player, boolean show) {
         writeBoolean(player.getPersistentDataContainer(), showOwnToOthersKey, show);
+    }
+
+    public boolean readAdminHideOthers(@NotNull Player player) {
+        return readBoolean(player.getPersistentDataContainer(), adminHideOthersKey, false);
+    }
+
+    public void writeAdminHideOthers(@NotNull Player player, boolean hide) {
+        writeBoolean(player.getPersistentDataContainer(), adminHideOthersKey, hide);
     }
 
     private static boolean readBoolean(@NotNull PersistentDataContainer pdc, @NotNull NamespacedKey key,

@@ -62,6 +62,8 @@ public class NameTagManager implements UntNametagManagerPaper {
     private final Map<UUID, AtomicInteger> pendingRowCreations;
     private final Set<UUID> blocked;
     private final Set<UUID> hideNametags;
+    /** Players whose other-nametag preference is administratively forced off. */
+    private final Set<UUID> adminHiddenViewers;
     /** Players who hide their own nametag from themselves (inverse of show-own-to-self preference). */
     private final Set<UUID> hideOwnFromSelf;
     /** Owners who hide their nametag from all other viewers. */
@@ -102,6 +104,7 @@ public class NameTagManager implements UntNametagManagerPaper {
         this.pendingRowCreations = Maps.newConcurrentMap();
         this.blocked = Sets.newConcurrentHashSet();
         this.hideNametags = Sets.newConcurrentHashSet();
+        this.adminHiddenViewers = Sets.newConcurrentHashSet();
         this.hideOwnFromSelf = Sets.newConcurrentHashSet();
         this.hideOwnFromOthers = Sets.newConcurrentHashSet();
         this.playerPreferences = new NametagPlayerPreferences(plugin);
@@ -514,6 +517,11 @@ public class NameTagManager implements UntNametagManagerPaper {
         final boolean seeOthers = playerPreferences.readSeeOthers(player);
         final boolean showOwnSelf = playerPreferences.readShowOwnSelf(player);
         final boolean showOwnToOthers = playerPreferences.readShowOwnToOthers(player);
+        if (playerPreferences.readAdminHideOthers(player)) {
+            adminHiddenViewers.add(player.getUniqueId());
+        } else {
+            adminHiddenViewers.remove(player.getUniqueId());
+        }
 
         if (!seeOthers) {
             hideNametags.add(player.getUniqueId());
@@ -1729,6 +1737,22 @@ public class NameTagManager implements UntNametagManagerPaper {
         hideNametags.add(player.getUniqueId());
         playerPreferences.writeSeeOthers(player, false);
         hideAllOthersNametagsFromViewer(player);
+    }
+
+    /** Applies an administrator-controlled viewer restriction without changing the player's own preference. */
+    public void setAdminHiddenOtherNametags(@NotNull Player player, boolean hidden) {
+        playerPreferences.writeAdminHideOthers(player, hidden);
+        if (hidden) {
+            adminHiddenViewers.add(player.getUniqueId());
+            hideAllOthersNametagsFromViewer(player);
+        } else {
+            adminHiddenViewers.remove(player.getUniqueId());
+            applyPreferencesFromPersistentData(player);
+        }
+    }
+
+    public boolean isAdminHiddenOtherNametags(@NotNull UUID playerId) {
+        return adminHiddenViewers.contains(playerId);
     }
 
     public void showOtherNametags(@NotNull Player player) {

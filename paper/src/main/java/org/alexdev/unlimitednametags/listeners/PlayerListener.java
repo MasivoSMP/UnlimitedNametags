@@ -156,7 +156,8 @@ public class PlayerListener implements PackSendHandler {
             if (!player.isOnline()) {
                 return;
             }
-            if (plugin.getNametagManager().isHiddenOtherNametags(player)) {
+            if (plugin.getNametagManager().isHiddenOtherNametags(player)
+                    || plugin.getNametagManager().isAdminHiddenOtherNametags(player.getUniqueId())) {
                 plugin.getNametagManager().hideAllOthersNametagsFromViewer(player);
             }
         }, 1L);

@@ -15,6 +15,7 @@ libraries:
 depend:
   - packetevents
 softdepend:
+  - MasivoLib
   - PlaceholderAPI
   - ProtocolLib
   - ProtocolSupport
@@ -52,6 +53,8 @@ permissions:
   unt.preferences:
     default: true
   unt.preferences.others:
+    default: op
+  unt.visibility.admin:
     default: op
   unt.glow:
     default: op

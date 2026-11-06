@@ -41,6 +41,7 @@ dependencies {
     compileOnly(libs.creative.serializer)
     compileOnly(libs.libs.disguises)
     compileOnly(libs.hmcCosmetics)
+    compileOnly(files("../../MasivoLib/masivolib-api/build/libs/masivolib-api-0.1.4.jar"))
 
     implementation(libs.universalScheduler)
     implementation(libs.libbyBukkit)

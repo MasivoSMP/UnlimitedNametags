@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.tree.LiteralCommandNode;
+import com.masivo.masivolib.api.MasivoLib;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
@@ -22,9 +23,15 @@ import org.alexdev.unlimitednametags.config.TextFormatter;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.Location;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /**
  * Paper lifecycle-registered Brigadier command tree for {@code /unt}.
@@ -59,6 +66,7 @@ public final class UntBrigadierCommands {
                     .then(literalFormatter(plugin))
                     .then(literalHideOtherNametags(plugin))
                     .then(literalShowOtherNametags(plugin))
+                    .then(literalVisibility(plugin))
                     .then(literalPreferences(plugin))
                     .then(literalGlow(plugin))
                     .build();
@@ -81,8 +89,122 @@ public final class UntBrigadierCommands {
         msg(plugin, sender, "<green>/unt formatter</green> <gray><name></gray> <gray>- Set default text formatter</gray>");
         msg(plugin, sender, "<green>/unt hideOtherNametags</green> <gray>- Hide other players' nametags</gray>");
         msg(plugin, sender, "<green>/unt showOtherNametags</green> <gray>- Show other players' nametags</gray>");
+        msg(plugin, sender, "<green>/unt visibility player [name] [hide|show]</green> <gray>- Admin viewer restriction</gray>");
+        msg(plugin, sender, "<green>/unt visibility radius [blocks] [hide|show]</green> <gray>- Apply to players here now</gray>");
         msg(plugin, sender, "<green>/unt preferences …</green> <gray>- Per-player nametag visibility (see /unt preferences)");
         msg(plugin, sender, "<green>/unt glow …</green> <gray>- Per-player glow overrides (see /unt glow)");
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> literalVisibility(
+            @NotNull UnlimitedNameTags plugin) {
+        return Commands.literal("visibility")
+                .requires(stack -> stack.getSender().hasPermission("unt.visibility.admin"))
+                .then(Commands.literal("player")
+                        .then(Commands.argument("target", StringArgumentType.word())
+                                .suggests((ctx, builder) -> {
+                                    Bukkit.getOnlinePlayers().forEach(player -> builder.suggest(player.getName()));
+                                    return builder.buildFuture();
+                                })
+                                .then(Commands.literal("hide").executes(ctx -> setAdminVisibility(plugin,
+                                        ctx.getSource().getSender(), Bukkit.getPlayerExact(
+                                                StringArgumentType.getString(ctx, "target")), true)))
+                                .then(Commands.literal("show").executes(ctx -> setAdminVisibility(plugin,
+                                        ctx.getSource().getSender(), Bukkit.getPlayerExact(
+                                                StringArgumentType.getString(ctx, "target")), false)))))
+                .then(Commands.literal("radius")
+                        .then(Commands.argument("blocks", IntegerArgumentType.integer(1, 10000))
+                                .then(Commands.literal("hide").executes(ctx -> applyRadiusVisibility(plugin,
+                                        ctx.getSource().getSender(), IntegerArgumentType.getInteger(ctx, "blocks"), true)))
+                                .then(Commands.literal("show").executes(ctx -> applyRadiusVisibility(plugin,
+                                        ctx.getSource().getSender(), IntegerArgumentType.getInteger(ctx, "blocks"), false)))));
+    }
+
+    private static int setAdminVisibility(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
+            @Nullable Player target, boolean hidden) {
+        if (target == null) {
+            msg(plugin, sender, "<red>Player not found or not online.</red>");
+            return 0;
+        }
+        final String targetName = target.getName();
+        supplyFor(plugin, target, player -> {
+            plugin.getNametagManager().setAdminHiddenOtherNametags(player, hidden);
+            return null;
+        }).whenComplete((ignored, error) -> deliver(plugin, sender, () -> {
+            if (error != null) {
+                msg(plugin, sender, "<red>Could not update nametag visibility for <name>.</red>",
+                        Placeholder.unparsed("name", targetName));
+                return;
+            }
+            msg(plugin, sender, hidden
+                            ? "<green><name> can no longer see other nametags.</green>"
+                            : "<green><name> can see nametags according to their own preference.</green>",
+                    Placeholder.unparsed("name", targetName));
+        }));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int applyRadiusVisibility(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
+            int radius, boolean hidden) {
+        if (!(sender instanceof Player moderator)) {
+            msg(plugin, sender, "<red>Players only; the radius is centered on you.</red>");
+            return 0;
+        }
+        final Location center = moderator.getLocation().clone();
+        final UUID worldId = center.getWorld().getUID();
+        final double radiusSquared = (double) radius * radius;
+        final List<CompletableFuture<Boolean>> operations = new ArrayList<>();
+        for (Player target : List.copyOf(Bukkit.getOnlinePlayers())) {
+            operations.add(supplyFor(plugin, target, player -> {
+                final Location current = player.getLocation();
+                if (!current.getWorld().getUID().equals(worldId)
+                        || current.distanceSquared(center) > radiusSquared) {
+                    return false;
+                }
+                plugin.getNametagManager().setAdminHiddenOtherNametags(player, hidden);
+                return true;
+            }).exceptionally(error -> false));
+        }
+        CompletableFuture.allOf(operations.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) -> {
+            final long affected = operations.stream().filter(CompletableFuture::join).count();
+            deliver(plugin, sender, () -> msg(plugin, sender,
+                    "<green>Applied the visibility setting to <yellow><count></yellow> player(s) currently within <yellow><radius></yellow> blocks.</green>",
+                    Placeholder.unparsed("count", String.valueOf(affected)),
+                    Placeholder.unparsed("radius", String.valueOf(radius))));
+        });
+        msg(plugin, sender, "<gray>Checking players currently within <radius> blocks...</gray>",
+                Placeholder.unparsed("radius", String.valueOf(radius)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <T> CompletableFuture<T> supplyFor(@NotNull UnlimitedNameTags plugin, @NotNull Player player,
+            @NotNull Function<Player, T> action) {
+        final MasivoLib masivoLib = Bukkit.getServicesManager().load(MasivoLib.class);
+        if (masivoLib != null) {
+            return masivoLib.scheduler().supplyFor(player, entity -> action.apply((Player) entity), null);
+        }
+        final CompletableFuture<T> result = new CompletableFuture<>();
+        player.getScheduler().run(plugin, task -> {
+            try {
+                result.complete(action.apply(player));
+            } catch (Throwable throwable) {
+                result.completeExceptionally(throwable);
+            }
+        }, () -> result.completeExceptionally(new IllegalStateException("Player scheduler retired")));
+        return result;
+    }
+
+    private static void deliver(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
+            @NotNull Runnable message) {
+        if (sender instanceof Player player) {
+            final MasivoLib masivoLib = Bukkit.getServicesManager().load(MasivoLib.class);
+            if (masivoLib != null) {
+                masivoLib.scheduler().runFor(player, entity -> message.run(), null);
+            } else {
+                player.getScheduler().run(plugin, task -> message.run(), null);
+            }
+        } else {
+            Bukkit.getGlobalRegionScheduler().run(plugin, task -> message.run());
+        }
     }
 
     private static void sendPreferenceLines(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender to,
