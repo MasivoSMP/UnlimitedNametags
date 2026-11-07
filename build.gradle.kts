@@ -14,6 +14,7 @@ subprojects {
         mavenLocal { content { includeGroup("io.canvasmc.pinac") } }
         mavenCentral()
         maven("https://repo.papermc.io/repository/maven-public/")
+        maven("https://maven.enginehub.org/repo/")
         maven("https://repo.nexomc.com/snapshots/")
         maven("https://oss.sonatype.org/content/groups/public/")
         maven("https://repo.extendedclip.com/releases")

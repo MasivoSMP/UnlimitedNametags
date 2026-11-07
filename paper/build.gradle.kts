@@ -12,6 +12,20 @@ dependencies {
     implementation(project(":api-paper"))
 
     compileOnly(libs.paperApi)
+    compileOnly(libs.worldguard) {
+        // The server supplies WorldEdit and shared libraries; avoid WorldGuard's strict
+        // transitive dependency constraints conflicting with the project's server API.
+        isTransitive = false
+    }
+    compileOnly("com.sk89q.worldguard:worldguard-core:${libs.versions.worldguardVersion.get()}") {
+        isTransitive = false
+    }
+    compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.4.0") {
+        isTransitive = false
+    }
+    compileOnly("com.sk89q.worldedit:worldedit-core:7.4.0") {
+        isTransitive = false
+    }
     compileOnly(libs.adventureApi)
     compileOnly(libs.typeWriter) {
         exclude(group = "io.papermc.paper")
@@ -41,8 +55,6 @@ dependencies {
     compileOnly(libs.creative.serializer)
     compileOnly(libs.libs.disguises)
     compileOnly(libs.hmcCosmetics)
-    compileOnly(files("../../MasivoLib/masivolib-api/build/libs/masivolib-api-0.1.4.jar"))
-
     implementation(libs.universalScheduler)
     implementation(libs.libbyBukkit)
 

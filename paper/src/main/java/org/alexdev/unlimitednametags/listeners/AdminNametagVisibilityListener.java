@@ -19,7 +19,8 @@ public final class AdminNametagVisibilityListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onNametagVisibility(@NotNull PlayerNametagVisibilityEvent event) {
         if (!event.isOwnerViewingOwnNametag()
-                && plugin.getNametagManager().isAdminHiddenOtherNametags(event.getViewer().getUniqueId())) {
+                && (plugin.getNametagManager().isAdminHiddenOtherNametags(event.getViewer().getUniqueId())
+                || plugin.getNametagManager().isRegionHiddenOtherNametags(event.getViewer().getUniqueId()))) {
             event.setVisible(false);
         }
     }

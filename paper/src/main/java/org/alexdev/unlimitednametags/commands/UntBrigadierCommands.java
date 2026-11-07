@@ -6,7 +6,6 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.tree.LiteralCommandNode;
-import com.masivo.masivolib.api.MasivoLib;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
@@ -20,10 +19,12 @@ import org.alexdev.unlimitednametags.config.GlowOverride;
 import org.alexdev.unlimitednametags.config.NametagDisplayType;
 import org.alexdev.unlimitednametags.config.NametagGlowOverrides;
 import org.alexdev.unlimitednametags.config.TextFormatter;
+import org.alexdev.unlimitednametags.integration.worldguard.RegionVisibilityIntegration;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -91,6 +92,7 @@ public final class UntBrigadierCommands {
         msg(plugin, sender, "<green>/unt showOtherNametags</green> <gray>- Show other players' nametags</gray>");
         msg(plugin, sender, "<green>/unt visibility player [name] [hide|show]</green> <gray>- Admin viewer restriction</gray>");
         msg(plugin, sender, "<green>/unt visibility radius [blocks] [hide|show]</green> <gray>- Apply to players here now</gray>");
+        msg(plugin, sender, "<color:#90EE90>/unt visibility region <world> <region> <hide|show|clear></color> <gray>- WorldGuard nametag rule</gray>");
         msg(plugin, sender, "<green>/unt preferences …</green> <gray>- Per-player nametag visibility (see /unt preferences)");
         msg(plugin, sender, "<green>/unt glow …</green> <gray>- Per-player glow overrides (see /unt glow)");
     }
@@ -116,7 +118,89 @@ public final class UntBrigadierCommands {
                                 .then(Commands.literal("hide").executes(ctx -> applyRadiusVisibility(plugin,
                                         ctx.getSource().getSender(), IntegerArgumentType.getInteger(ctx, "blocks"), true)))
                                 .then(Commands.literal("show").executes(ctx -> applyRadiusVisibility(plugin,
-                                        ctx.getSource().getSender(), IntegerArgumentType.getInteger(ctx, "blocks"), false)))));
+                                        ctx.getSource().getSender(), IntegerArgumentType.getInteger(ctx, "blocks"), false)))))
+                .then(literalRegionVisibility(plugin));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> literalRegionVisibility(
+            @NotNull UnlimitedNameTags plugin) {
+        return Commands.literal("region")
+                .then(Commands.argument("world", StringArgumentType.word())
+                        .suggests((ctx, builder) -> {
+                            Bukkit.getWorlds().forEach(world -> builder.suggest(world.getName()));
+                            return builder.buildFuture();
+                        })
+                        .then(Commands.argument("region", StringArgumentType.word())
+                                .suggests((ctx, builder) -> {
+                                    final RegionVisibilityIntegration integration = plugin.getRegionVisibilityIntegration();
+                                    final World world = Bukkit.getWorld(StringArgumentType.getString(ctx, "world"));
+                                    if (integration != null && integration.isAvailable() && world != null) {
+                                        integration.regionIds(world).forEach(builder::suggest);
+                                    }
+                                    return builder.buildFuture();
+                                })
+                                .then(Commands.literal("hide").executes(ctx -> setRegionVisibility(plugin,
+                                        ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
+                                        StringArgumentType.getString(ctx, "region"), RegionVisibilityIntegration.Action.HIDE)))
+                                .then(Commands.literal("show").executes(ctx -> setRegionVisibility(plugin,
+                                        ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
+                                        StringArgumentType.getString(ctx, "region"), RegionVisibilityIntegration.Action.SHOW)))
+                                .then(Commands.literal("clear").executes(ctx -> setRegionVisibility(plugin,
+                                        ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
+                                        StringArgumentType.getString(ctx, "region"), RegionVisibilityIntegration.Action.CLEAR)))));
+    }
+
+    private static int setRegionVisibility(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
+            @NotNull String worldName, @NotNull String regionId,
+            @NotNull RegionVisibilityIntegration.Action action) {
+        final RegionVisibilityIntegration integration = plugin.getRegionVisibilityIntegration();
+        if (integration == null || !integration.isAvailable()) {
+            msg(plugin, sender, "<red>WorldGuard is unavailable or the UNT region flag could not be registered.</red>");
+            return 0;
+        }
+        final World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            msg(plugin, sender, "<red>World <yellow><world></yellow> is not loaded.</red>",
+                    Placeholder.unparsed("world", worldName));
+            return 0;
+        }
+
+        integration.setRegionFlag(world, regionId, action).whenComplete((result, error) -> deliver(plugin, sender, () -> {
+            if (error != null || result == null) {
+                msg(plugin, sender, "<red>Could not update WorldGuard region <yellow><region></yellow>.</red>",
+                        Placeholder.unparsed("region", regionId));
+                return;
+            }
+            switch (result) {
+                case UPDATED -> msg(plugin, sender,
+                        "<color:#90EE90>WorldGuard region <region> in <world>: <action>.</color>",
+                        Placeholder.unparsed("region", regionId), Placeholder.unparsed("world", worldName),
+                        Placeholder.unparsed("action", regionActionLabel(action)));
+                case UNCHANGED -> msg(plugin, sender,
+                        "<color:#90EE90>WorldGuard region <region> already has that setting.</color>",
+                        Placeholder.unparsed("region", regionId));
+                case WORLD_NOT_READY -> msg(plugin, sender,
+                        "<red>WorldGuard has no loaded region data for <yellow><world></yellow>.</red>",
+                        Placeholder.unparsed("world", worldName));
+                case REGION_NOT_FOUND -> msg(plugin, sender,
+                        "<red>WorldGuard region <yellow><region></yellow> was not found in <yellow><world></yellow>.</red>",
+                        Placeholder.unparsed("region", regionId), Placeholder.unparsed("world", worldName));
+                case SAVE_FAILED -> msg(plugin, sender,
+                        "<red>The flag changed in memory, but WorldGuard could not save region <yellow><region></yellow>.</red>",
+                        Placeholder.unparsed("region", regionId));
+                case UNAVAILABLE -> msg(plugin, sender,
+                        "<red>WorldGuard region visibility is unavailable.</red>");
+            }
+        }));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static String regionActionLabel(@NotNull RegionVisibilityIntegration.Action action) {
+        return switch (action) {
+            case HIDE -> "nametags hidden";
+            case SHOW -> "nametags shown";
+            case CLEAR -> "flag cleared";
+        };
     }
 
     private static int setAdminVisibility(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
@@ -178,10 +262,6 @@ public final class UntBrigadierCommands {
 
     private static <T> CompletableFuture<T> supplyFor(@NotNull UnlimitedNameTags plugin, @NotNull Player player,
             @NotNull Function<Player, T> action) {
-        final MasivoLib masivoLib = Bukkit.getServicesManager().load(MasivoLib.class);
-        if (masivoLib != null) {
-            return masivoLib.scheduler().supplyFor(player, entity -> action.apply((Player) entity), null);
-        }
         final CompletableFuture<T> result = new CompletableFuture<>();
         player.getScheduler().run(plugin, task -> {
             try {
@@ -196,12 +276,7 @@ public final class UntBrigadierCommands {
     private static void deliver(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
             @NotNull Runnable message) {
         if (sender instanceof Player player) {
-            final MasivoLib masivoLib = Bukkit.getServicesManager().load(MasivoLib.class);
-            if (masivoLib != null) {
-                masivoLib.scheduler().runFor(player, entity -> message.run(), null);
-            } else {
-                player.getScheduler().run(plugin, task -> message.run(), null);
-            }
+            player.getScheduler().run(plugin, task -> message.run(), null);
         } else {
             Bukkit.getGlobalRegionScheduler().run(plugin, task -> message.run());
         }

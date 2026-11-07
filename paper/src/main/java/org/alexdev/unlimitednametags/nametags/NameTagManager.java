@@ -64,6 +64,8 @@ public class NameTagManager implements UntNametagManagerPaper {
     private final Set<UUID> hideNametags;
     /** Players whose other-nametag preference is administratively forced off. */
     private final Set<UUID> adminHiddenViewers;
+    /** Viewers currently inside a WorldGuard area that denies seeing other nametags. */
+    private final Set<UUID> regionHiddenViewers;
     /** Players who hide their own nametag from themselves (inverse of show-own-to-self preference). */
     private final Set<UUID> hideOwnFromSelf;
     /** Owners who hide their nametag from all other viewers. */
@@ -105,6 +107,7 @@ public class NameTagManager implements UntNametagManagerPaper {
         this.blocked = Sets.newConcurrentHashSet();
         this.hideNametags = Sets.newConcurrentHashSet();
         this.adminHiddenViewers = Sets.newConcurrentHashSet();
+        this.regionHiddenViewers = Sets.newConcurrentHashSet();
         this.hideOwnFromSelf = Sets.newConcurrentHashSet();
         this.hideOwnFromOthers = Sets.newConcurrentHashSet();
         this.playerPreferences = new NametagPlayerPreferences(plugin);
@@ -1753,6 +1756,60 @@ public class NameTagManager implements UntNametagManagerPaper {
 
     public boolean isAdminHiddenOtherNametags(@NotNull UUID playerId) {
         return adminHiddenViewers.contains(playerId);
+    }
+
+    /** Updates transient WorldGuard state; this is deliberately never written to player PDC. */
+    public void setRegionHiddenOtherNametags(@NotNull Player viewer, boolean hidden) {
+        final UUID viewerId = viewer.getUniqueId();
+        final boolean changed = hidden
+                ? regionHiddenViewers.add(viewerId)
+                : regionHiddenViewers.remove(viewerId);
+        if (!changed) {
+            return;
+        }
+
+        // WorldGuard session callbacks follow player movement; apply packet work on that player's Folia scheduler.
+        viewer.getScheduler().run(plugin, task -> reconcileRegionVisibility(viewer), null);
+    }
+
+    public boolean isRegionHiddenOtherNametags(@NotNull UUID viewerId) {
+        return regionHiddenViewers.contains(viewerId);
+    }
+
+    public void clearRegionHiddenViewer(@NotNull UUID viewerId) {
+        regionHiddenViewers.remove(viewerId);
+    }
+
+    public void clearRegionHiddenViewers() {
+        regionHiddenViewers.clear();
+    }
+
+    private void reconcileRegionVisibility(@NotNull Player viewer) {
+        if (!viewer.isOnline()) {
+            return;
+        }
+
+        final UUID viewerId = viewer.getUniqueId();
+        final boolean hide = regionHiddenViewers.contains(viewerId)
+                || adminHiddenViewers.contains(viewerId)
+                || playerPreferences.readAdminHideOthers(viewer)
+                || !playerPreferences.readSeeOthers(viewer);
+        for (UUID targetId : plugin.getTrackerManager().getTrackedPlayers(viewerId)) {
+            if (targetId.equals(viewerId)) {
+                continue;
+            }
+            final Player target = plugin.getPlayerListener().getPlayer(targetId);
+            if (target == null) {
+                continue;
+            }
+            for (PaperNametagRow row : getPacketDisplays(target)) {
+                if (hide) {
+                    row.hideFromPlayer(viewer);
+                } else {
+                    row.showToPlayer(viewer);
+                }
+            }
+        }
     }
 
     public void showOtherNametags(@NotNull Player player) {

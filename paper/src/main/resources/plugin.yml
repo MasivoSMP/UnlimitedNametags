@@ -15,6 +15,7 @@ libraries:
 depend:
   - packetevents
 softdepend:
+  - WorldGuard
   - MasivoLib
   - PlaceholderAPI
   - ProtocolLib

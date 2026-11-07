@@ -21,6 +21,7 @@ import org.alexdev.unlimitednametags.config.GlowOverride;
 import org.alexdev.unlimitednametags.glow.DefaultNametagGlowRegistrations;
 import org.alexdev.unlimitednametags.hook.*;
 import org.alexdev.unlimitednametags.hook.hat.HatHook;
+import org.alexdev.unlimitednametags.integration.worldguard.RegionVisibilityIntegration;
 import org.alexdev.unlimitednametags.listeners.*;
 import org.alexdev.unlimitednametags.metrics.Metrics;
 import org.alexdev.unlimitednametags.nametags.ConditionalManager;
@@ -69,6 +70,7 @@ public final class UnlimitedNameTags extends JavaPlugin implements UnlimitedName
     private ConditionalManager conditionalManager;
     private final NametagRuntime nametagRuntime = new BukkitNametagRuntime(this);
     private NametagMaterialBridge nametagMaterialBridge;
+    private RegionVisibilityIntegration regionVisibilityIntegration;
 
     private final ConcurrentHashMap<String, NametagCustomAnimationHandler> nametagCustomAnimations =
             new ConcurrentHashMap<>();
@@ -80,6 +82,27 @@ public final class UnlimitedNameTags extends JavaPlugin implements UnlimitedName
     public void onLoad() {
         hooks = Maps.newHashMap();
         hatHooks = Lists.newCopyOnWriteArrayList();
+        loadWorldGuardIntegration();
+    }
+
+    private void loadWorldGuardIntegration() {
+        if (Bukkit.getPluginManager().getPlugin("WorldGuard") == null) {
+            return;
+        }
+        try {
+            final Class<?> implementation = Class.forName(
+                    "org.alexdev.unlimitednametags.integration.worldguard.WorldGuardRegionVisibilityIntegration",
+                    true, getClass().getClassLoader());
+            final Object candidate = implementation.getConstructor(UnlimitedNameTags.class).newInstance(this);
+            if (!(candidate instanceof RegionVisibilityIntegration integration) || !integration.registerFlag()) {
+                getLogger().warning("WorldGuard is present, but UNT could not register its nametag visibility flag.");
+                return;
+            }
+            regionVisibilityIntegration = integration;
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            getLogger().log(java.util.logging.Level.WARNING,
+                    "WorldGuard was detected, but the optional UNT integration could not be loaded.", exception);
+        }
     }
 
     @Override
@@ -101,6 +124,9 @@ public final class UnlimitedNameTags extends JavaPlugin implements UnlimitedName
         nametagMaterialBridge = new BukkitNametagMaterialBridge(this);
         nametagManager = new NameTagManager(this);
         Bukkit.getPluginManager().registerEvents(new AdminNametagVisibilityListener(this), this);
+        if (regionVisibilityIntegration != null && !regionVisibilityIntegration.enable()) {
+            getLogger().warning("WorldGuard is present, but UNT region nametag visibility could not be enabled.");
+        }
         placeholderManager = new PlaceholderManager(this);
         vanishManager = new VanishManager(this);
         packetManager = new PacketManager(this);
@@ -432,6 +458,10 @@ public final class UnlimitedNameTags extends JavaPlugin implements UnlimitedName
 
     @Override
     public void onDisable() {
+        if (regionVisibilityIntegration != null) {
+            regionVisibilityIntegration.disable();
+            regionVisibilityIntegration = null;
+        }
         UNTPaperAPI.unregister();
         nametagCustomAnimations.clear();
         nametagGlowAnimations.clear();
