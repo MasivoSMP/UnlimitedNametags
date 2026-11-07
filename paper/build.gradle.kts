@@ -123,7 +123,11 @@ tasks.named<ShadowJar>("shadowJar") {
     destinationDirectory.set(file("${rootProject.projectDir}/target"))
     archiveFileName.set("${rootProject.name}.jar")
 
-    minimize()
+    minimize {
+        // This module's classes are referenced across project-JAR boundaries and the
+        // minimizer may otherwise drop classes used from Paper's runtime paths.
+        exclude(project(":common"))
+    }
 }
 
 kotlin {
