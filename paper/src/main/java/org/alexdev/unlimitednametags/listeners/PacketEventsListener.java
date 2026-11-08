@@ -386,7 +386,15 @@ public class PacketEventsListener extends PacketListenerAbstract {
         vanillaFallbackTeams.remove(player.getUniqueId());
         final UUID targetId = player.getUniqueId();
         vanillaFallbackTeams.forEach((viewerId, byTarget) -> {
-            byTarget.remove(targetId);
+            if (!byTarget.containsKey(targetId)) {
+                return;
+            }
+            final Player viewer = plugin.getPlayerListener().getPlayer(viewerId);
+            if (viewer != null) {
+                removeVanillaFallbackNametagHidden(viewer, player);
+            } else {
+                byTarget.remove(targetId);
+            }
             if (byTarget.isEmpty()) {
                 vanillaFallbackTeams.remove(viewerId, byTarget);
             }
