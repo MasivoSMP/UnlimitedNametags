@@ -79,6 +79,13 @@ public interface PaperNametagRow extends UntNametagDisplay, NametagAnimationTarg
         if (owner == null) {
             return;
         }
+        // WorldGuard's unt-see-other-nametags DENY is a viewer-side policy. Guard
+        // every later spawn/replay as well as the initial reconciliation, otherwise
+        // a newly-created row could immediately undo the packet hide.
+        if (!owner.getUniqueId().equals(player.getUniqueId())
+                && getPlugin().getNametagManager().isOtherNametagsHiddenForViewer(player.getUniqueId())) {
+            return;
+        }
         final boolean visible = fireVisibilityEvent(owner, player, true, canPlayerSee(player));
         if (!visible) {
             if (getPlugin().getNametagManager().isDebug()) {

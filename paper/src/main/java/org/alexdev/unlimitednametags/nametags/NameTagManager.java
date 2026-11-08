@@ -66,6 +66,8 @@ public class NameTagManager implements UntNametagManagerPaper {
     private final Set<UUID> adminHiddenViewers;
     /** Viewers currently inside a WorldGuard area that denies seeing other nametags. */
     private final Set<UUID> regionHiddenViewers;
+    /** Viewers inside a WorldGuard area that hides their own nametag from themselves. */
+    private final Set<UUID> regionHiddenOwnViewers;
     /** Players who hide their own nametag from themselves (inverse of show-own-to-self preference). */
     private final Set<UUID> hideOwnFromSelf;
     /** Owners who hide their nametag from all other viewers. */
@@ -108,6 +110,7 @@ public class NameTagManager implements UntNametagManagerPaper {
         this.hideNametags = Sets.newConcurrentHashSet();
         this.adminHiddenViewers = Sets.newConcurrentHashSet();
         this.regionHiddenViewers = Sets.newConcurrentHashSet();
+        this.regionHiddenOwnViewers = Sets.newConcurrentHashSet();
         this.hideOwnFromSelf = Sets.newConcurrentHashSet();
         this.hideOwnFromOthers = Sets.newConcurrentHashSet();
         this.playerPreferences = new NametagPlayerPreferences(plugin);
@@ -465,7 +468,11 @@ public class NameTagManager implements UntNametagManagerPaper {
      */
     public boolean isEffectiveShowOwnNametag(@NotNull Player player) {
         final Settings s = plugin.getConfigManager().getSettings();
-        final boolean wants = !hideOwnFromSelf.contains(player.getUniqueId());
+        final UUID playerId = player.getUniqueId();
+        if (regionHiddenOwnViewers.contains(playerId)) {
+            return false;
+        }
+        final boolean wants = !hideOwnFromSelf.contains(playerId);
         if (!wants) {
             return false;
         }
@@ -575,6 +582,7 @@ public class NameTagManager implements UntNametagManagerPaper {
      * Hides every other player's nametag from this viewer (not the viewer's own rows). Packet-level.
      */
     public void hideAllOthersNametagsFromViewer(@NotNull Player viewer) {
+        plugin.getPacketEventsListener().onWorldChange(viewer);
         nameTags.values().forEach(tags -> tags.forEach(display -> {
             final PaperNametagRow row = paperRow(display);
             if (row.getOwner().getUniqueId().equals(viewer.getUniqueId())) {
@@ -594,6 +602,7 @@ public class NameTagManager implements UntNametagManagerPaper {
             return;
         }
         syncPlayerPreferenceSetsFromPdc(player);
+        plugin.getPacketEventsListener().onWorldChange(player);
 
         final boolean seeOthers = playerPreferences.readSeeOthers(player);
         final boolean showOwnSelf = playerPreferences.readShowOwnSelf(player);
@@ -1761,15 +1770,32 @@ public class NameTagManager implements UntNametagManagerPaper {
     /** Updates transient WorldGuard state; this is deliberately never written to player PDC. */
     public void setRegionHiddenOtherNametags(@NotNull Player viewer, boolean hidden) {
         final UUID viewerId = viewer.getUniqueId();
-        final boolean changed = hidden
-                ? regionHiddenViewers.add(viewerId)
-                : regionHiddenViewers.remove(viewerId);
-        if (!changed) {
-            return;
+        if (hidden) {
+            regionHiddenViewers.add(viewerId);
+        } else {
+            regionHiddenViewers.remove(viewerId);
         }
-
+        // Reconcile even when the state value did not change: a session reset can happen
+        // after nametag rows were created, and those rows still need the region policy.
         // WorldGuard session callbacks follow player movement; apply packet work on that player's Folia scheduler.
         viewer.getScheduler().run(plugin, task -> reconcileRegionVisibility(viewer), null);
+    }
+
+    /** Updates transient WorldGuard state that hides this player's own nametag from them. */
+    public void setRegionHiddenOwnNametagFromSelf(@NotNull Player viewer, boolean hidden) {
+        final UUID viewerId = viewer.getUniqueId();
+        if (hidden) {
+            regionHiddenOwnViewers.add(viewerId);
+        } else {
+            regionHiddenOwnViewers.remove(viewerId);
+        }
+        // Reapply on repeated callbacks as rows may have been created since the first callback.
+        viewer.getScheduler().run(plugin, task -> refresh(viewer, true), null);
+    }
+
+    public boolean isOtherNametagsHiddenForViewer(@NotNull UUID viewerId) {
+        return hideNametags.contains(viewerId) || adminHiddenViewers.contains(viewerId)
+                || regionHiddenViewers.contains(viewerId);
     }
 
     public boolean isRegionHiddenOtherNametags(@NotNull UUID viewerId) {
@@ -1778,10 +1804,12 @@ public class NameTagManager implements UntNametagManagerPaper {
 
     public void clearRegionHiddenViewer(@NotNull UUID viewerId) {
         regionHiddenViewers.remove(viewerId);
+        regionHiddenOwnViewers.remove(viewerId);
     }
 
     public void clearRegionHiddenViewers() {
         regionHiddenViewers.clear();
+        regionHiddenOwnViewers.clear();
     }
 
     private void reconcileRegionVisibility(@NotNull Player viewer) {
@@ -1794,20 +1822,27 @@ public class NameTagManager implements UntNametagManagerPaper {
                 || adminHiddenViewers.contains(viewerId)
                 || playerPreferences.readAdminHideOthers(viewer)
                 || !playerPreferences.readSeeOthers(viewer);
+
+        // WorldGuard's deny flag must have the same packet-level effect as
+        // `/unt visibility radius <n> hide`: hide every loaded foreign row,
+        // not only rows currently present in the tracker's viewer list.
+        if (hide) {
+            hideAllOthersNametagsFromViewer(viewer);
+            return;
+        }
+        plugin.getPacketEventsListener().onWorldChange(viewer);
+
+        // Restore the normal visibility set when the region policy no longer hides
+        // nametags. This intentionally follows the existing tracked-player restore
+        // path used by the radius/admin visibility controls.
         for (UUID targetId : plugin.getTrackerManager().getTrackedPlayers(viewerId)) {
-            if (targetId.equals(viewerId)) {
-                continue;
-            }
+            if (targetId.equals(viewerId)) continue;
             final Player target = plugin.getPlayerListener().getPlayer(targetId);
             if (target == null) {
                 continue;
             }
             for (PaperNametagRow row : getPacketDisplays(target)) {
-                if (hide) {
-                    row.hideFromPlayer(viewer);
-                } else {
-                    row.showToPlayer(viewer);
-                }
+                row.showToPlayer(viewer);
             }
         }
     }
@@ -1815,6 +1850,7 @@ public class NameTagManager implements UntNametagManagerPaper {
     public void showOtherNametags(@NotNull Player player) {
         hideNametags.remove(player.getUniqueId());
         playerPreferences.writeSeeOthers(player, true);
+        plugin.getPacketEventsListener().onWorldChange(player);
         plugin.getTrackerManager().getTrackedPlayers(player.getUniqueId()).forEach(uuid -> {
             final Player tracked = plugin.getPlayerListener().getPlayer(uuid);
             if (tracked == null) {

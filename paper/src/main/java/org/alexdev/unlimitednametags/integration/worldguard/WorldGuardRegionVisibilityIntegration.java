@@ -18,6 +18,11 @@ import org.alexdev.unlimitednametags.UnlimitedNameTags;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.server.ServerCommandEvent;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Comparator;
@@ -26,20 +31,30 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 
-/** Registers a WorldGuard state flag and tracks effective flag changes through WorldGuard sessions. */
-public final class WorldGuardRegionVisibilityIntegration implements RegionVisibilityIntegration {
+/** Registers UNT WorldGuard state flags and tracks their effective changes through WorldGuard sessions. */
+public final class WorldGuardRegionVisibilityIntegration implements RegionVisibilityIntegration, Listener {
 
     public static final String FLAG_NAME = "unt-see-other-nametags";
+    public static final String OWN_FLAG_NAME = "unt-see-own-nametag";
 
     private final UnlimitedNameTags plugin;
-    private final Handler.Factory<NametagVisibilityHandler> handlerFactory = new Handler.Factory<>() {
+    // WorldGuard stores one handler per concrete handler class in each Session. Keep
+    // these factories/classes distinct or registering one flag replaces the other.
+    private final Handler.Factory<OtherNametagVisibilityHandler> otherHandlerFactory = new Handler.Factory<>() {
         @Override
-        public NametagVisibilityHandler create(Session session) {
-            return new NametagVisibilityHandler(session);
+        public OtherNametagVisibilityHandler create(Session session) {
+            return new OtherNametagVisibilityHandler(session);
+        }
+    };
+    private final Handler.Factory<OwnNametagVisibilityHandler> ownHandlerFactory = new Handler.Factory<>() {
+        @Override
+        public OwnNametagVisibilityHandler create(Session session) {
+            return new OwnNametagVisibilityHandler(session);
         }
     };
 
     private StateFlag flag;
+    private StateFlag ownFlag;
     private SessionManager sessionManager;
     private boolean enabled;
 
@@ -68,6 +83,22 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
                 return false;
             }
         }
+
+        try {
+            ownFlag = new StateFlag(OWN_FLAG_NAME, true);
+            registry.register(ownFlag);
+        } catch (FlagConflictException exception) {
+            final Flag<?> existing = registry.get(OWN_FLAG_NAME);
+            if (existing instanceof StateFlag stateFlag) {
+                ownFlag = stateFlag;
+            } else {
+                ownFlag = null;
+                plugin.getLogger().log(Level.SEVERE,
+                        "WorldGuard flag '" + OWN_FLAG_NAME + "' is already registered with an incompatible type. "
+                                + "The own-nametag region rule is unavailable.", exception);
+            }
+        }
+
         return true;
     }
 
@@ -78,16 +109,23 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
         }
 
         sessionManager = WorldGuard.getInstance().getPlatform().getSessionManager();
-        if (!sessionManager.registerHandler(handlerFactory, null)) {
-            plugin.getLogger().warning("WorldGuard did not register the UNT nametag visibility handler.");
+        if (!sessionManager.registerHandler(otherHandlerFactory, null)) {
+            plugin.getLogger().warning("WorldGuard did not register the UNT other-nametag visibility handler.");
             sessionManager = null;
             return false;
         }
-
+        if (ownFlag != null && !sessionManager.registerHandler(ownHandlerFactory, null)) {
+            sessionManager.unregisterHandler(otherHandlerFactory);
+            plugin.getLogger().warning("WorldGuard did not register the UNT own-nametag visibility handler.");
+            sessionManager = null;
+            return false;
+        }
         enabled = true;
+        Bukkit.getPluginManager().registerEvents(this, plugin);
         // Also initialize sessions for players already online when UNT is enabled or reloaded.
         sessionManager.resetAllStates();
-        plugin.getLogger().info("WorldGuard region nametag visibility enabled (flag=" + FLAG_NAME + ").");
+        plugin.getLogger().info("WorldGuard region nametag visibility enabled (flags=" + FLAG_NAME
+                + (ownFlag == null ? "" : ", " + OWN_FLAG_NAME) + ").");
         return true;
     }
 
@@ -95,7 +133,10 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
     public void disable() {
         final SessionManager manager = sessionManager;
         if (manager != null) {
-            manager.unregisterHandler(handlerFactory);
+            manager.unregisterHandler(otherHandlerFactory);
+            if (ownFlag != null) {
+                manager.unregisterHandler(ownHandlerFactory);
+            }
             // Remove this handler from already-created sessions and restore its runtime state.
             manager.resetAllStates();
         }
@@ -104,6 +145,37 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
         if (plugin.getNametagManager() != null) {
             plugin.getNametagManager().clearRegionHiddenViewers();
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerWorldGuardCommand(@NotNull PlayerCommandPreprocessEvent event) {
+        if (isFlagCommand(event.getMessage())) {
+            scheduleSessionReset();
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onServerWorldGuardCommand(@NotNull ServerCommandEvent event) {
+        if (isFlagCommand('/' + event.getCommand())) {
+            scheduleSessionReset();
+        }
+    }
+
+    private boolean isFlagCommand(@NotNull String rawCommand) {
+        final String command = rawCommand.startsWith("/") ? rawCommand.substring(1) : rawCommand;
+        final String[] parts = command.trim().split("\\s+");
+        return parts.length >= 2
+                && (parts[0].equalsIgnoreCase("rg") || parts[0].equalsIgnoreCase("region"))
+                && parts[1].equalsIgnoreCase("flag");
+    }
+
+    private void scheduleSessionReset() {
+        Bukkit.getGlobalRegionScheduler().run(plugin, task -> {
+            final SessionManager current = sessionManager;
+            if (enabled && current != null) {
+                current.resetAllStates();
+            }
+        });
     }
 
     @Override
@@ -130,6 +202,26 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
             @NotNull World world,
             @NotNull String regionId,
             @NotNull Action action) {
+        return setRegionFlag(world, regionId, action, flag, FLAG_NAME);
+    }
+
+    @Override
+    public CompletableFuture<UpdateResult> setRegionOwnNametagFlag(
+            @NotNull World world,
+            @NotNull String regionId,
+            @NotNull Action action) {
+        if (ownFlag == null) {
+            return CompletableFuture.completedFuture(UpdateResult.UNAVAILABLE);
+        }
+        return setRegionFlag(world, regionId, action, ownFlag, OWN_FLAG_NAME);
+    }
+
+    private CompletableFuture<UpdateResult> setRegionFlag(
+            @NotNull World world,
+            @NotNull String regionId,
+            @NotNull Action action,
+            @NotNull StateFlag targetFlag,
+            @NotNull String targetFlagName) {
         if (!isAvailable()) {
             return CompletableFuture.completedFuture(UpdateResult.UNAVAILABLE);
         }
@@ -149,11 +241,11 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
             case SHOW -> StateFlag.State.ALLOW;
             case CLEAR -> null;
         };
-        if (Objects.equals(region.getFlag(flag), value)) {
+        if (Objects.equals(region.getFlag(targetFlag), value)) {
             return CompletableFuture.completedFuture(UpdateResult.UNCHANGED);
         }
 
-        region.setFlag(flag, value);
+        region.setFlag(targetFlag, value);
         // WorldGuard permits saves from any thread; do not block a Folia region or global tick on disk I/O.
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -169,16 +261,16 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
                 return UpdateResult.UPDATED;
             } catch (Exception exception) {
                 plugin.getLogger().log(Level.SEVERE,
-                        "Could not save WorldGuard flag '" + FLAG_NAME + "' for region '" + regionId + "'.", exception);
+                        "Could not save WorldGuard flag '" + targetFlagName + "' for region '" + regionId + "'.", exception);
                 return UpdateResult.SAVE_FAILED;
             }
         });
     }
 
-    private final class NametagVisibilityHandler extends FlagValueChangeHandler<StateFlag.State> {
+    private abstract class NametagVisibilityHandler extends FlagValueChangeHandler<StateFlag.State> {
 
-        private NametagVisibilityHandler(@NotNull Session session) {
-            super(session, flag);
+        private NametagVisibilityHandler(@NotNull Session session, @NotNull StateFlag targetFlag) {
+            super(session, targetFlag);
         }
 
         @Override
@@ -214,9 +306,34 @@ public final class WorldGuardRegionVisibilityIntegration implements RegionVisibi
         private void apply(LocalPlayer localPlayer, StateFlag.State value) {
             final Player player = Bukkit.getPlayer(localPlayer.getUniqueId());
             if (player != null) {
-                plugin.getNametagManager().setRegionHiddenOtherNametags(player,
-                        value == StateFlag.State.DENY);
+                apply(player, value == StateFlag.State.DENY);
             }
+        }
+
+        protected abstract void apply(Player player, boolean hidden);
+    }
+
+    private final class OtherNametagVisibilityHandler extends NametagVisibilityHandler {
+
+        private OtherNametagVisibilityHandler(@NotNull Session session) {
+            super(session, flag);
+        }
+
+        @Override
+        protected void apply(Player player, boolean hidden) {
+            plugin.getNametagManager().setRegionHiddenOtherNametags(player, hidden);
+        }
+    }
+
+    private final class OwnNametagVisibilityHandler extends NametagVisibilityHandler {
+
+        private OwnNametagVisibilityHandler(@NotNull Session session) {
+            super(session, ownFlag);
+        }
+
+        @Override
+        protected void apply(Player player, boolean hidden) {
+            plugin.getNametagManager().setRegionHiddenOwnNametagFromSelf(player, hidden);
         }
     }
 }

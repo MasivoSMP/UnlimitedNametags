@@ -92,7 +92,7 @@ public final class UntBrigadierCommands {
         msg(plugin, sender, "<green>/unt showOtherNametags</green> <gray>- Show other players' nametags</gray>");
         msg(plugin, sender, "<green>/unt visibility player [name] [hide|show]</green> <gray>- Admin viewer restriction</gray>");
         msg(plugin, sender, "<green>/unt visibility radius [blocks] [hide|show]</green> <gray>- Apply to players here now</gray>");
-        msg(plugin, sender, "<color:#90EE90>/unt visibility region <world> <region> <hide|show|clear></color> <gray>- WorldGuard nametag rule</gray>");
+        msg(plugin, sender, "<color:#90EE90>/unt visibility region <world> <region> [others|self] <hide|show|clear></color> <gray>- WorldGuard nametag rules</gray>");
         msg(plugin, sender, "<green>/unt preferences …</green> <gray>- Per-player nametag visibility (see /unt preferences)");
         msg(plugin, sender, "<green>/unt glow …</green> <gray>- Per-player glow overrides (see /unt glow)");
     }
@@ -139,20 +139,31 @@ public final class UntBrigadierCommands {
                                     }
                                     return builder.buildFuture();
                                 })
-                                .then(Commands.literal("hide").executes(ctx -> setRegionVisibility(plugin,
-                                        ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
-                                        StringArgumentType.getString(ctx, "region"), RegionVisibilityIntegration.Action.HIDE)))
-                                .then(Commands.literal("show").executes(ctx -> setRegionVisibility(plugin,
-                                        ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
-                                        StringArgumentType.getString(ctx, "region"), RegionVisibilityIntegration.Action.SHOW)))
-                                .then(Commands.literal("clear").executes(ctx -> setRegionVisibility(plugin,
-                                        ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
-                                        StringArgumentType.getString(ctx, "region"), RegionVisibilityIntegration.Action.CLEAR)))));
+                                // Keep the original command as an alias for the others rule.
+                                .then(regionAction(plugin, false, "hide", RegionVisibilityIntegration.Action.HIDE))
+                                .then(regionAction(plugin, false, "show", RegionVisibilityIntegration.Action.SHOW))
+                                .then(regionAction(plugin, false, "clear", RegionVisibilityIntegration.Action.CLEAR))
+                                .then(Commands.literal("others")
+                                        .then(regionAction(plugin, false, "hide", RegionVisibilityIntegration.Action.HIDE))
+                                        .then(regionAction(plugin, false, "show", RegionVisibilityIntegration.Action.SHOW))
+                                        .then(regionAction(plugin, false, "clear", RegionVisibilityIntegration.Action.CLEAR)))
+                                .then(Commands.literal("self")
+                                        .then(regionAction(plugin, true, "hide", RegionVisibilityIntegration.Action.HIDE))
+                                        .then(regionAction(plugin, true, "show", RegionVisibilityIntegration.Action.SHOW))
+                                        .then(regionAction(plugin, true, "clear", RegionVisibilityIntegration.Action.CLEAR)))));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> regionAction(
+            @NotNull UnlimitedNameTags plugin, boolean ownNametag, @NotNull String literal,
+            @NotNull RegionVisibilityIntegration.Action action) {
+        return Commands.literal(literal).executes(ctx -> setRegionVisibility(plugin,
+                ctx.getSource().getSender(), StringArgumentType.getString(ctx, "world"),
+                StringArgumentType.getString(ctx, "region"), action, ownNametag));
     }
 
     private static int setRegionVisibility(@NotNull UnlimitedNameTags plugin, @NotNull CommandSender sender,
             @NotNull String worldName, @NotNull String regionId,
-            @NotNull RegionVisibilityIntegration.Action action) {
+            @NotNull RegionVisibilityIntegration.Action action, boolean ownNametag) {
         final RegionVisibilityIntegration integration = plugin.getRegionVisibilityIntegration();
         if (integration == null || !integration.isAvailable()) {
             msg(plugin, sender, "<red>WorldGuard is unavailable or the UNT region flag could not be registered.</red>");
@@ -165,7 +176,10 @@ public final class UntBrigadierCommands {
             return 0;
         }
 
-        integration.setRegionFlag(world, regionId, action).whenComplete((result, error) -> deliver(plugin, sender, () -> {
+        final CompletableFuture<RegionVisibilityIntegration.UpdateResult> update = ownNametag
+                ? integration.setRegionOwnNametagFlag(world, regionId, action)
+                : integration.setRegionFlag(world, regionId, action);
+        update.whenComplete((result, error) -> deliver(plugin, sender, () -> {
             if (error != null || result == null) {
                 msg(plugin, sender, "<red>Could not update WorldGuard region <yellow><region></yellow>.</red>",
                         Placeholder.unparsed("region", regionId));
@@ -175,7 +189,7 @@ public final class UntBrigadierCommands {
                 case UPDATED -> msg(plugin, sender,
                         "<color:#90EE90>WorldGuard region <region> in <world>: <action>.</color>",
                         Placeholder.unparsed("region", regionId), Placeholder.unparsed("world", worldName),
-                        Placeholder.unparsed("action", regionActionLabel(action)));
+                        Placeholder.unparsed("action", regionActionLabel(action, ownNametag)));
                 case UNCHANGED -> msg(plugin, sender,
                         "<color:#90EE90>WorldGuard region <region> already has that setting.</color>",
                         Placeholder.unparsed("region", regionId));
@@ -195,11 +209,12 @@ public final class UntBrigadierCommands {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static String regionActionLabel(@NotNull RegionVisibilityIntegration.Action action) {
+    private static String regionActionLabel(@NotNull RegionVisibilityIntegration.Action action, boolean ownNametag) {
+        final String subject = ownNametag ? "own nametag" : "other players' nametags";
         return switch (action) {
-            case HIDE -> "nametags hidden";
-            case SHOW -> "nametags shown";
-            case CLEAR -> "flag cleared";
+            case HIDE -> subject + " hidden";
+            case SHOW -> subject + " shown";
+            case CLEAR -> "visibility flag cleared";
         };
     }
 

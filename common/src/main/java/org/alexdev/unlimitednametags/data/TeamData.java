@@ -16,7 +16,7 @@ public class TeamData {
     private WrapperPlayServerTeams.ScoreBoardTeamInfo teamInfo;
     private final Set<String> members;
     private boolean changedVisibility = false;
-    private final WrapperPlayServerTeams.NameTagVisibility originalVisibility;
+    private WrapperPlayServerTeams.NameTagVisibility originalVisibility;
 
     public TeamData(@NotNull String teamName, @NotNull WrapperPlayServerTeams.ScoreBoardTeamInfo teamInfo) {
         this.teamName = teamName;

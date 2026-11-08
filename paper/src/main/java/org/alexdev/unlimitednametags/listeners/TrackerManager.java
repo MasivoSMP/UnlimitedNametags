@@ -86,7 +86,7 @@ public class TrackerManager {
             trackedBy.put(target.getUniqueId(), player.getUniqueId());
 
             plugin.getNametagManager().updateDisplay(player, target);
-            plugin.getPacketEventsListener().ensureBedrockFallbackNametagHidden(player, target);
+            plugin.getPacketEventsListener().ensureVanillaNametagHidden(player, target);
         });
     }
 
@@ -105,7 +105,7 @@ public class TrackerManager {
         trackedPlayers.remove(player.getUniqueId(), target.getUniqueId());
         trackedBy.remove(target.getUniqueId(), player.getUniqueId());
         plugin.getNametagManager().removeDisplay(player, target);
-        plugin.getPacketEventsListener().removeBedrockFallbackNametagHidden(player, target);
+        plugin.getPacketEventsListener().removeVanillaFallbackNametagHidden(player, target);
     }
 
     /**

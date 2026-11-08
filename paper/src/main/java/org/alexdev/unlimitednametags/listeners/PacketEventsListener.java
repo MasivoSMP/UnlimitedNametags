@@ -8,7 +8,6 @@ import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.event.UserDisconnectEvent;
 import com.github.retrooper.packetevents.protocol.entity.data.EntityData;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
-import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.util.Vector3f;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientEntityAction;
@@ -35,17 +34,17 @@ import java.util.*;
 
 public class PacketEventsListener extends PacketListenerAbstract {
 
-    private static final String BEDROCK_FALLBACK_TEAM_PREFIX = "unt_bedrock_hide_";
+    private static final String VANILLA_FALLBACK_TEAM_PREFIX = "unt_vanilla_hide_";
     private final UnlimitedNameTags plugin;
     private final Map<UUID, Map<String, TeamData>> teams;
-    private final Map<UUID, Map<UUID, String>> bedrockFallbackTeams;
+    private final Map<UUID, Map<UUID, String>> vanillaFallbackTeams;
     private final PacketListenerAbstract passengerObserver;
 
     public PacketEventsListener(UnlimitedNameTags plugin) {
         super(PacketListenerPriority.HIGHEST);
         this.plugin = plugin;
         this.teams = Maps.newConcurrentMap();
-        this.bedrockFallbackTeams = Maps.newConcurrentMap();
+        this.vanillaFallbackTeams = Maps.newConcurrentMap();
         this.passengerObserver = new PacketListenerAbstract(PacketListenerPriority.MONITOR) {
             @Override
             public void onPacketSend(PacketSendEvent event) {
@@ -200,52 +199,38 @@ public class PacketEventsListener extends PacketListenerAbstract {
     }
 
 
-    private boolean preTeamsChecks(@NotNull PacketSendEvent event, boolean bedrockViewer) {
-        if (!plugin.getConfigManager().getSettings().getBehavior().isDisableDefaultNameTag()) {
-            return false;
-        }
-
-        if (!(event.getPlayer() instanceof Player player)
-                || !plugin.getConfigManager().getSettings().getWorlds().isEnabled(player.getWorld().getName())) {
-            return false;
-        }
-
-        return bedrockViewer || event.getUser().getClientVersion().isNewerThan(ClientVersion.V_1_19_3);
+    private boolean shouldHideVanillaNametags(@NotNull Player viewer) {
+        return plugin.getNametagManager().isOtherNametagsHiddenForViewer(viewer.getUniqueId())
+                || (plugin.getConfigManager().getSettings().getBehavior().isDisableDefaultNameTag()
+                && plugin.getConfigManager().getSettings().getWorlds().isEnabled(viewer.getWorld().getName()));
     }
 
     private void handleTeams(@NotNull PacketSendEvent event) {
-        final boolean bedrockViewer = event.getPlayer() instanceof Player player && plugin.isBedrockPlayer(player);
-        if (!preTeamsChecks(event, bedrockViewer)) {
-            return;
-        }
-
+        if (!(event.getPlayer() instanceof Player)) return;
         final WrapperPlayServerTeams packet = new WrapperPlayServerTeams(event);
-        if (isBedrockFallbackTeam(packet.getTeamName())) {
-            return;
-        }
-        if (handleForceDisableDefaultNameTag(event, packet)) {
-            return;
-        }
-        if (bedrockViewer) {
-            forceHideVanillaNametagForBedrock(event, packet);
-        }
-
+        if (isVanillaFallbackTeam(packet.getTeamName())) return;
+        // Track real team membership even while vanilla names are allowed, so a later
+        // viewer restriction can update existing teams without stealing their members.
         final Map<String, TeamData> teams = getTeams(event.getUser().getUUID());
         final String teamName = packet.getTeamName();
 
         switch (packet.getTeamMode()) {
             case ADD_ENTITIES -> handleAddEntities(event, packet, teams, teamName);
-            case REMOVE_ENTITIES -> handleRemoveEntities(packet, teams, teamName);
+            case REMOVE_ENTITIES -> {
+                handleRemoveEntities(packet, teams, teamName);
+                scheduleVanillaRefresh(event);
+            }
             case CREATE -> handleCreateTeam(event, packet, teams, teamName);
             case UPDATE -> handleUpdateTeam(event, packet, teams, teamName);
-            case REMOVE -> teams.remove(teamName);
+            case REMOVE -> {
+                teams.remove(teamName);
+                scheduleVanillaRefresh(event);
+            }
         }
     }
 
-    public void ensureBedrockFallbackNametagHidden(@NotNull Player viewer, @NotNull Player target) {
-        if (!plugin.getConfigManager().getSettings().getBehavior().isDisableDefaultNameTag()
-                || !plugin.getConfigManager().getSettings().getWorlds().isEnabled(viewer.getWorld().getName())
-                || !plugin.isBedrockPlayer(viewer)
+    public void ensureVanillaNametagHidden(@NotNull Player viewer, @NotNull Player target) {
+        if (!shouldHideVanillaNametags(viewer)
                 || viewer.getUniqueId().equals(target.getUniqueId())
                 || isPlayerAlreadyInTeam(viewer.getUniqueId(), target.getName())) {
             return;
@@ -258,12 +243,12 @@ public class PacketEventsListener extends PacketListenerAbstract {
 
         final UUID viewerId = viewer.getUniqueId();
         final UUID targetId = target.getUniqueId();
-        final Map<UUID, String> fallbackByTarget = bedrockFallbackTeams.computeIfAbsent(viewerId, ignored -> Maps.newConcurrentMap());
+        final Map<UUID, String> fallbackByTarget = vanillaFallbackTeams.computeIfAbsent(viewerId, ignored -> Maps.newConcurrentMap());
         if (fallbackByTarget.containsKey(targetId)) {
             return;
         }
 
-        final String teamName = buildBedrockFallbackTeamName(viewerId, targetId);
+        final String teamName = buildVanillaFallbackTeamName(viewerId, targetId);
         fallbackByTarget.put(targetId, teamName);
         final WrapperPlayServerTeams.ScoreBoardTeamInfo info = new WrapperPlayServerTeams.ScoreBoardTeamInfo(
                 Component.empty(), Component.empty(), Component.empty(),
@@ -275,8 +260,8 @@ public class PacketEventsListener extends PacketListenerAbstract {
         user.sendPacket(new WrapperPlayServerTeams(teamName, WrapperPlayServerTeams.TeamMode.CREATE, info, List.of(target.getName())));
     }
 
-    public void removeBedrockFallbackNametagHidden(@NotNull Player viewer, @NotNull Player target) {
-        final Map<UUID, String> fallbackByTarget = bedrockFallbackTeams.get(viewer.getUniqueId());
+    public void removeVanillaFallbackNametagHidden(@NotNull Player viewer, @NotNull Player target) {
+        final Map<UUID, String> fallbackByTarget = vanillaFallbackTeams.get(viewer.getUniqueId());
         if (fallbackByTarget == null) {
             return;
         }
@@ -285,7 +270,7 @@ public class PacketEventsListener extends PacketListenerAbstract {
             return;
         }
         if (fallbackByTarget.isEmpty()) {
-            bedrockFallbackTeams.remove(viewer.getUniqueId(), fallbackByTarget);
+            vanillaFallbackTeams.remove(viewer.getUniqueId(), fallbackByTarget);
         }
         final User user = PacketEvents.getAPI().getPlayerManager().getUser(viewer);
         if (user != null && user.getChannel() != null) {
@@ -300,39 +285,20 @@ public class PacketEventsListener extends PacketListenerAbstract {
                 .anyMatch(team -> team.getMembers().contains(playerName));
     }
 
-    private boolean isBedrockFallbackTeam(@NotNull String teamName) {
-        return teamName.startsWith(BEDROCK_FALLBACK_TEAM_PREFIX);
+    private boolean isVanillaFallbackTeam(@NotNull String teamName) {
+        return teamName.startsWith(VANILLA_FALLBACK_TEAM_PREFIX);
     }
 
     @NotNull
-    private String buildBedrockFallbackTeamName(@NotNull UUID viewerId, @NotNull UUID targetId) {
+    private String buildVanillaFallbackTeamName(@NotNull UUID viewerId, @NotNull UUID targetId) {
         final String viewer = viewerId.toString().replace("-", "").substring(0, 8);
         final String target = targetId.toString().replace("-", "").substring(0, 8);
-        return BEDROCK_FALLBACK_TEAM_PREFIX + viewer + "_" + target;
+        return VANILLA_FALLBACK_TEAM_PREFIX + viewer + "_" + target;
     }
 
-    private void forceHideVanillaNametagForBedrock(@NotNull PacketSendEvent event, @NotNull WrapperPlayServerTeams packet) {
-        if (packet.getTeamMode() != WrapperPlayServerTeams.TeamMode.CREATE
-                && packet.getTeamMode() != WrapperPlayServerTeams.TeamMode.UPDATE) {
-            return;
-        }
-        packet.getTeamInfo().ifPresent(teamInfo -> {
-            if (teamInfo.getTagVisibility() != WrapperPlayServerTeams.NameTagVisibility.NEVER) {
-                teamInfo.setTagVisibility(WrapperPlayServerTeams.NameTagVisibility.NEVER);
-                event.markForReEncode(true);
-            }
-        });
-    }
-
-    private boolean handleForceDisableDefaultNameTag(@NotNull PacketSendEvent event, @NotNull WrapperPlayServerTeams packet) {
-        if (plugin.getConfigManager().getSettings().getBehavior().isForceDisableDefaultNameTag()) {
-            if (packet.getTeamMode() == WrapperPlayServerTeams.TeamMode.CREATE || packet.getTeamMode() == WrapperPlayServerTeams.TeamMode.UPDATE) {
-                packet.getTeamInfo().ifPresent(t -> t.setTagVisibility(WrapperPlayServerTeams.NameTagVisibility.NEVER));
-                event.markForReEncode(true);
-            }
-            return true;
-        }
-        return false;
+    private void scheduleVanillaRefresh(@NotNull PacketSendEvent event) {
+        final Player viewer = (Player) event.getPlayer();
+        event.getTasksAfterSend().add(() -> viewer.getScheduler().run(plugin, task -> onWorldChange(viewer), null));
     }
 
     private void handleAddEntities(@NotNull PacketSendEvent event, @NotNull WrapperPlayServerTeams packet,
@@ -345,18 +311,19 @@ public class PacketEventsListener extends PacketListenerAbstract {
         final TeamData teamData = teamDataOpt.get();
         teamData.getMembers().addAll(packet.getPlayers());
 
-        if (!teamData.isChangedVisibility() && packet.getPlayers().stream().anyMatch(this::existsPlayer)) {
+        if (shouldHideVanillaNametags((Player) event.getPlayer())
+                && !teamData.isChangedVisibility() && packet.getPlayers().stream().anyMatch(this::existsPlayer)) {
             teamData.setChangedVisibility(true);
             final WrapperPlayServerTeams.ScoreBoardTeamInfo teamInfo = teamData.getTeamInfo();
             teamInfo.setTagVisibility(WrapperPlayServerTeams.NameTagVisibility.NEVER);
             if (teamData.getTeamInfo() != null) {
-                event.getUser().sendPacket(new WrapperPlayServerTeams(teamName, WrapperPlayServerTeams.TeamMode.UPDATE, teamData.getTeamInfo(), teamData.getMembers()));
+                event.getUser().sendPacketSilently(new WrapperPlayServerTeams(teamName, WrapperPlayServerTeams.TeamMode.UPDATE, teamData.getTeamInfo(), teamData.getMembers()));
             }
         }
 
-        if (event.getPlayer() instanceof Player viewer && plugin.isBedrockPlayer(viewer)) {
+        if (event.getPlayer() instanceof Player viewer) {
             packet.getPlayers().stream().map(Bukkit::getPlayerExact).filter(Objects::nonNull)
-                    .forEach(target -> removeBedrockFallbackNametagHidden(viewer, target));
+                    .forEach(target -> removeVanillaFallbackNametagHidden(viewer, target));
         }
     }
 
@@ -375,7 +342,9 @@ public class PacketEventsListener extends PacketListenerAbstract {
             final TeamData teamData = new TeamData(teamName, teamInfo, Set.copyOf(packet.getPlayers()));
             teams.put(teamName, teamData);
 
-            if (teamData.getMembers().stream().anyMatch(this::existsPlayer)) {
+            if (shouldHideVanillaNametags((Player) event.getPlayer())
+                    && (plugin.getConfigManager().getSettings().getBehavior().isForceDisableDefaultNameTag()
+                    || teamData.getMembers().stream().anyMatch(this::existsPlayer))) {
                 teamData.setChangedVisibility(true);
                 // Ensure teamInfo is not null before setting visibility
                 if (teamData.getTeamInfo() != null) {
@@ -385,9 +354,9 @@ public class PacketEventsListener extends PacketListenerAbstract {
             }
         });
 
-        if (event.getPlayer() instanceof Player viewer && plugin.isBedrockPlayer(viewer)) {
+        if (event.getPlayer() instanceof Player viewer) {
             packet.getPlayers().stream().map(Bukkit::getPlayerExact).filter(Objects::nonNull)
-                    .forEach(target -> removeBedrockFallbackNametagHidden(viewer, target));
+                    .forEach(target -> removeVanillaFallbackNametagHidden(viewer, target));
         }
     }
 
@@ -399,7 +368,12 @@ public class PacketEventsListener extends PacketListenerAbstract {
 
         final TeamData teamData = teamDataOpt.get();
         packet.getTeamInfo().ifPresent(teamInfoFromPacket -> {
-            if (teamData.isChangedVisibility() && teamInfoFromPacket.getTagVisibility() != WrapperPlayServerTeams.NameTagVisibility.NEVER) {
+            teamData.setOriginalVisibility(teamInfoFromPacket.getTagVisibility());
+            final boolean hide = shouldHideVanillaNametags((Player) event.getPlayer())
+                    && (plugin.getConfigManager().getSettings().getBehavior().isForceDisableDefaultNameTag()
+                    || teamData.getMembers().stream().anyMatch(this::existsPlayer));
+            teamData.setChangedVisibility(hide);
+            if (hide && teamInfoFromPacket.getTagVisibility() != WrapperPlayServerTeams.NameTagVisibility.NEVER) {
                 teamInfoFromPacket.setTagVisibility(WrapperPlayServerTeams.NameTagVisibility.NEVER);
                 event.markForReEncode(true);
             }
@@ -409,26 +383,27 @@ public class PacketEventsListener extends PacketListenerAbstract {
 
     public void removePlayerData(@NotNull Player player) {
         teams.remove(player.getUniqueId());
-        bedrockFallbackTeams.remove(player.getUniqueId());
+        vanillaFallbackTeams.remove(player.getUniqueId());
         final UUID targetId = player.getUniqueId();
-        bedrockFallbackTeams.forEach((viewerId, byTarget) -> {
+        vanillaFallbackTeams.forEach((viewerId, byTarget) -> {
             byTarget.remove(targetId);
             if (byTarget.isEmpty()) {
-                bedrockFallbackTeams.remove(viewerId, byTarget);
+                vanillaFallbackTeams.remove(viewerId, byTarget);
             }
         });
     }
 
     public void onWorldChange(@NotNull Player player) {
         final Map<String, TeamData> viewerTeams = getTeams(player.getUniqueId());
-        final boolean enabled = plugin.getConfigManager().getSettings().getWorlds()
-                .isEnabled(player.getWorld().getName());
+        final boolean enabled = shouldHideVanillaNametags(player);
         final User user = PacketEvents.getAPI().getPlayerManager().getUser(player);
         if (user == null) {
             return;
         }
         viewerTeams.forEach((teamName, teamData) -> {
-            final boolean shouldHide = enabled && teamData.getMembers().stream().anyMatch(this::existsPlayer);
+            final boolean shouldHide = enabled
+                    && (plugin.getConfigManager().getSettings().getBehavior().isForceDisableDefaultNameTag()
+                    || teamData.getMembers().stream().anyMatch(this::existsPlayer));
             if (shouldHide == teamData.isChangedVisibility() || teamData.getTeamInfo() == null) {
                 return;
             }
@@ -436,21 +411,21 @@ public class PacketEventsListener extends PacketListenerAbstract {
                     ? WrapperPlayServerTeams.NameTagVisibility.NEVER
                     : teamData.getOriginalVisibility());
             teamData.setChangedVisibility(shouldHide);
-            user.sendPacket(new WrapperPlayServerTeams(teamName, WrapperPlayServerTeams.TeamMode.UPDATE,
+            user.sendPacketSilently(new WrapperPlayServerTeams(teamName, WrapperPlayServerTeams.TeamMode.UPDATE,
                     teamData.getTeamInfo(), teamData.getMembers()));
         });
-        final Map<UUID, String> fallbackByTarget = bedrockFallbackTeams.get(player.getUniqueId());
+        final Map<UUID, String> fallbackByTarget = vanillaFallbackTeams.get(player.getUniqueId());
         if (!enabled && fallbackByTarget != null) {
             final Set<UUID> targets = Set.copyOf(fallbackByTarget.keySet());
             for (UUID targetId : targets) {
                 final Player target = plugin.getPlayerListener().getPlayer(targetId);
-                if (target != null) removeBedrockFallbackNametagHidden(player, target);
+                if (target != null) removeVanillaFallbackNametagHidden(player, target);
             }
         } else if (enabled) {
             plugin.getTrackerManager().getTrackedPlayers(player.getUniqueId()).stream()
                     .map(plugin.getPlayerListener()::getPlayer)
                     .filter(Objects::nonNull)
-                    .forEach(target -> ensureBedrockFallbackNametagHidden(player, target));
+                    .forEach(target -> ensureVanillaNametagHidden(player, target));
         }
     }
 
@@ -494,6 +469,6 @@ public class PacketEventsListener extends PacketListenerAbstract {
     public void onDisable() {
         PacketEvents.getAPI().getEventManager().unregisterListener(passengerObserver);
         PacketEvents.getAPI().getEventManager().unregisterListener(this);
-        bedrockFallbackTeams.clear();
+        vanillaFallbackTeams.clear();
     }
 }

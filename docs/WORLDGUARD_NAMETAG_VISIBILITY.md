@@ -1,29 +1,46 @@
 # WorldGuard nametag visibility
 
-UnlimitedNameTags registers the WorldGuard state flag `unt-see-other-nametags` when WorldGuard is installed.
-The flag applies to an existing WorldGuard region. It does not create or resize regions.
+UnlimitedNameTags registers two WorldGuard state flags when WorldGuard is installed. Both apply to existing
+WorldGuard regions; they do not create or resize regions.
 
-Use `/unt visibility region <world> <region> hide` to hide other players' nametags from viewers while they are
-inside the region. Use `show` to explicitly allow them, or `clear` to remove the region's value and inherit the
-normal WorldGuard result. The command suggests loaded worlds and region IDs and requires
-`unt.visibility.admin` (operators by default).
+The region command separates the two effects:
 
-The same flag can be managed with WorldGuard commands:
+```text
+/unt visibility region <world> <region> others hide|show|clear
+/unt visibility region <world> <region> self hide|show|clear
+```
+
+`others` hides or allows other players' nametags from a viewer standing inside the region. `self` hides or allows
+the viewer's own nametag from themselves. The
+original `/unt visibility region <world> <region> hide|show|clear`
+form remains an alias for `others`. `clear` removes the flag value and inherits the normal WorldGuard result.
+The command suggests loaded worlds and region IDs and requires `unt.visibility.admin` (operators by default).
+
+The flags can also be managed directly with WorldGuard commands:
 
 ```text
 /rg flag <region> unt-see-other-nametags deny
 /rg flag <region> unt-see-other-nametags allow
 /rg flag <region> unt-see-other-nametags
+/rg flag <region> unt-see-own-nametag deny
+/rg flag <region> unt-see-own-nametag allow
+/rg flag <region> unt-see-own-nametag
 ```
 
-WorldGuard handles region priorities, overlaps, and inheritance. `deny` hides other players' nametags; `allow`
-shows them unless a higher-priority applicable WorldGuard rule denies them. An unset flag has no effect.
-The viewer's personal preferences and any administrator hide restriction still apply. Leaving the effective
-deny area restores those preferences; the region state is transient and is not saved to the player's data.
+WorldGuard handles region priorities, overlaps, and inheritance. `unt-see-other-nametags deny` hides both UNT's
+custom nametag rows and the vanilla player name above other players, matching `/unt hideOtherNametags true`;
+`unt-see-own-nametag deny` hides the viewer's own nametag from themselves. An `allow` value removes that region's
+denial, after which UNT's normal global settings and player preferences apply. An unset flag has no effect. The
+`others` rule respects the viewer's personal preferences and administrator hide restriction. The `self` rule only
+affects the player's own nametag as seen by that player.
+Leaving the effective deny area restores the applicable settings. Region state is transient and is not saved to player data; the
+separate `/unt visibility player <name> hide|show` administrator restriction remains available.
 
 The integration uses WorldGuard session callbacks when the effective flag changes, including the initial
-session state. Each change updates only nametags currently tracked by that viewer. It does not poll every
-player or scan all regions every tick.
+session state. It reconciles only the affected player's tracked nametags, on that player's scheduler, when the
+flag changes or a session is initialized. It does not poll every player or scan all regions every tick. Current
+sessions are reset after a flag edit so players already inside receive the new effective value; reconnecting
+players receive it from their initial session state.
 
 WorldGuard's `/rg flags` output uses fixed colors for explicit, inherited, and unset values; custom plugins
 cannot choose a per-flag color there. UNT's region command feedback is light green instead. See the

@@ -34,4 +34,6 @@ public interface RegionVisibilityIntegration {
     List<String> regionIds(World world);
 
     CompletableFuture<UpdateResult> setRegionFlag(World world, String regionId, Action action);
+
+    CompletableFuture<UpdateResult> setRegionOwnNametagFlag(World world, String regionId, Action action);
 }
