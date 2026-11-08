@@ -583,15 +583,20 @@ public class NameTagManager implements UntNametagManagerPaper {
      */
     public void hideAllOthersNametagsFromViewer(@NotNull Player viewer) {
         plugin.getPacketEventsListener().onWorldChange(viewer);
-        nameTags.values().forEach(tags -> tags.forEach(display -> {
-            final PaperNametagRow row = paperRow(display);
-            if (row.getOwner().getUniqueId().equals(viewer.getUniqueId())) {
-                return;
+        for (UUID targetId : plugin.getTrackerManager().getTrackedPlayers(viewer.getUniqueId())) {
+            if (targetId.equals(viewer.getUniqueId())) {
+                continue;
             }
-            if (row.canPlayerSee(viewer)) {
-                row.hideFromPlayer(viewer);
+            final Player target = plugin.getPlayerListener().getPlayer(targetId);
+            if (target == null) {
+                continue;
             }
-        }));
+            for (PaperNametagRow row : getPacketDisplays(target)) {
+                if (row.canPlayerSee(viewer)) {
+                    row.hideFromPlayer(viewer);
+                }
+            }
+        }
     }
 
     /**
