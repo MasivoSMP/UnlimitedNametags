@@ -876,6 +876,10 @@ public class NameTagManager implements UntNametagManagerPaper {
             replaceDisplayIfNeeded(player, i, displayGroup);
             final PaperNametagRow display = paperRow(playerTags.get(i));
 
+            if (force) {
+                applyGlobalDisplaySettings((PacketNameTag) display);
+            }
+
             final boolean show = isEffectiveShowOwnNametag(player);
             if (show && !display.canPlayerSee(player)) {
                 display.showToPlayer(player);
@@ -925,6 +929,7 @@ public class NameTagManager implements UntNametagManagerPaper {
             for (int i = current; i < needed; i++) {
                 Settings.DisplayGroup displayGroup = nametag.displayGroups().get(i);
                 final PaperNametagRow display = PacketNameTags.create(plugin, player, displayGroup);
+                applyGlobalDisplaySettings((PacketNameTag) display);
                 list.add((PacketNameTag) display);
                 entityIdToDisplay.put(((PacketNameTag) display).getEntityId(), (PacketNameTag) display);
                 if (displayGroup.resolvedDisplayType() == NametagDisplayType.TEXT) {
@@ -1051,10 +1056,8 @@ public class NameTagManager implements UntNametagManagerPaper {
                 applyTextVisualState(display, displayGroup, true);
             }
 
-            display.resetOffset(plugin.getConfigManager().getSettings().getBehavior().getYOffset());
+            applyGlobalDisplaySettings(display);
             display.setHelmetExtraOffset(helmetExtraOffset);
-
-            display.setViewRange(plugin.getConfigManager().getSettings().getBehavior().getViewDistance());
             applyRowGlow(player, groupIndex, display, displayGroup);
 
             if (dt == NametagDisplayType.TEXT) {
@@ -1084,6 +1087,7 @@ public class NameTagManager implements UntNametagManagerPaper {
         current.remove();
         entityIdToDisplay.remove(current.getEntityId());
         final PaperNametagRow neu = PacketNameTags.create(plugin, player, displayGroup);
+        applyGlobalDisplaySettings((PacketNameTag) neu);
         list.set(index, (PacketNameTag) neu);
         entityIdToDisplay.put(((PacketNameTag) neu).getEntityId(), (PacketNameTag) neu);
         if (displayGroup.resolvedDisplayType() == NametagDisplayType.TEXT) {
@@ -1094,6 +1098,12 @@ public class NameTagManager implements UntNametagManagerPaper {
             neu.showToPlayer(player);
         }
         handleVanish(player, (PacketNameTag) neu);
+    }
+
+    private void applyGlobalDisplaySettings(@NotNull PacketNameTag display) {
+        final Settings.Behavior behavior = plugin.getConfigManager().getSettings().getBehavior();
+        display.resetOffset(behavior.getYOffset());
+        display.setViewRange(behavior.getViewDistance());
     }
 
     @NotNull
