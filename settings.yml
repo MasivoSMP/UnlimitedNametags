@@ -1,0 +1,154 @@
+# Schema version for settings.yml (managed by the plugin; do not lower).
+# 1 = flat NameTag, 2 = displayGroups with string lines, 3 = displayGroups with structured lines,
+# 4 = unified Background (no type: discriminator) + sectioned settings,
+# 5 = throughWallMode, 6 = glowAnimations + per-row glow,
+# 7 = distance refresh culling, 8 = per-world activation.
+configVersion: 8
+nameTags:
+  default:
+    permission: nametag.default
+    displayGroups:
+      - lines:
+          - text: '%pvpmanager_pvp_status_prefix%%luckperms_prefix% %masivoaura_username_color%%player_name%<white> %masivolandbadges_badge% %masivoaura_badges_display% %vcicon%    '
+        scale: 1.0
+        yOffset: 0.0
+        relationalConditions: false
+        background:
+          enabled: false
+          color: '#ffffff'
+          opacity: 0
+          shadowed: false
+          seeThrough: false
+      - lines:
+          - text: '%masivoaura_title%    '
+        when: '"%masivoaura_is_title_active%" == "yes"'
+        scale: 1.0
+        yOffset: -0.28
+        relationalConditions: false
+        background:
+          enabled: false
+          color: '#ffffff'
+          opacity: 0
+          shadowed: false
+          seeThrough: false
+# Worlds where UnlimitedNameTags is active.
+worlds:
+  # BLACKLIST: UNT is active in every world except the worlds listed below.
+  # WHITELIST: UNT is active only in the worlds listed below.
+  mode: BLACKLIST
+  # World names are matched exactly against Bukkit world names.
+  list: []
+# Reusable glow animation presets. Reference from displayGroups via glow.type: reference.
+# Built-in ids: rainbow, gradient, gold_pulse (custom handler registered by the plugin).
+glowAnimations:
+  rainbow:
+    type: rainbow
+    enabled: true
+    speed: 1.0
+    customProperties: {}
+  gradient:
+    type: gradient
+    enabled: true
+    speed: 1.0
+    customProperties: {}
+    colors:
+    - '#FF5555'
+    - '#55FF55'
+    - '#5555FF'
+    refreshInterval: 10
+  gold_pulse:
+    type: custom
+    enabled: true
+    speed: 1.0
+    customProperties: {}
+    id: default_gold_pulse
+# General nametag behavior settings.
+behavior:
+  # Ticks between nametag placeholder refreshes.
+  taskInterval: 20
+  # Ticks between display animation updates when a display group has no animation_interval.
+  # Use 0 to use the same interval as taskInterval (nametag placeholder refresh cadence).
+  displayAnimationInterval: 1
+  # Global vertical offset (blocks) added to all nametags.
+  yOffset: 0.30000001192092896
+  # Divided by 160 and sent to clients as the display entity view_range (vanilla default = 1.0).
+  # ~blocks ≈ (viewDistance/160)*64. e.g. 60 → ~24 blocks, 160 → ~64 blocks.
+  viewDistance: 60.0
+  # When true, displayGroups are laid out as a compact vertical stack after placeholders are resolved.
+  # Empty text groups and inactive groups do not reserve vertical space.
+  compactDisplayGroupStack: false
+  # Estimated height (blocks) of one resolved text line when compactDisplayGroupStack is enabled.
+  displayGroupLineHeightBlocks: 0.25
+  # Whether to disable the default name tag or not.
+  disableDefaultNameTag: true
+  # Skip the team internal cache and force all default nametags invisible. Useful when NPCs share names with online players.
+  forceDisableDefaultNameTag: true
+  # The default billboard constraints for the nametag (CENTER, HORIZONTAL, VERTICAL, FIXED).
+  defaultBillboard: CENTER
+  # Which text formatter to use (MINIMESSAGE, MINEDOWN, LEGACY or UNIVERSAL).
+  # UNIVERSAL is the most resource intensive but supports all formatting options (except MINEDOWN).
+  # (&x&0&8&4&c&f&bc LEGACY OF LEGACY - &#084cfbc LEGACY - &#084cfbc& MINEDOWN - <color:#084cfbc> MINIMESSAGE)
+  format: MINIMESSAGE
+  # Remove empty lines from nametag display.
+  removeEmptyLines: true
+# Visibility and opacity settings.
+visibility:
+  # Opacity applied to the nametag when a player sneaks (-128 to 127). -1 = fully opaque (255).
+  sneakOpacity: 70
+  # Whether to see the NameTag of a user only while pointing at them.
+  showWhileLooking: false
+  # Whether to see your own NameTag (similar to nametag mod of Lunar Client).
+  showCurrentNameTag: true
+  # When showCurrentNameTag is false, players may still enable seeing their own nametag via /unt preferences if they have permission.
+  allowPerPlayerShowOwnWhenGlobalDisabled: false
+  # How to handle nametag visibility when there is no direct line of sight between players.
+  # Modes:
+  #  - SEE_THROUGH: Nametags are fully visible through walls (vanilla behavior).
+  #  - OBSCURED: Nametags are visible through walls but with reduced opacity (dimmed).
+  #  - HIDE: Nametags are completely hidden and despawned behind walls (anti-wallhack).
+  throughWallMode: SEE_THROUGH
+  # Settings applied when throughWallMode is set to OBSCURED or HIDE.
+  throughWallSettings:
+    # Text opacity when the viewer has no clear line of sight and mode is OBSCURED (-128 to 127).
+    opacity: 55
+    # Maximum distance (blocks) from viewer to owner for through-walls checks.
+    maxDistance: 48.0
+    # How often to re-check line of sight on the main/region thread (server tick interval).
+    checkInterval: 5
+# Performance and caching settings.
+performance:
+  # Whether to cache components for some time and reuse them.
+  # Useful for performance when a lot of gradients are used, but uses more memory.
+  # May cause problems with MiniPlaceholders, so disabled by default.
+  componentCaching: false
+  # Default placeholder cache time in ticks. All placeholders without a specific rate use this.
+  # Effective refresh rate per placeholder = max(behavior.taskInterval, this value or its placeholderUpdateRates entry).
+  placeholderCacheTime: 1
+  # Enable relational placeholders (per-viewer PAPI evaluation). Requires PlaceholderAPI.
+  enableRelationalPlaceholders: false
+  # Per-placeholder refresh rate in ticks. The placeholder is re-fetched from PAPI at most once every
+  # max(behavior.taskInterval, value) ticks. Useful to slow down expensive but slowly-changing placeholders.
+  # Example:  "%vault_eco_balance%": 100   (re-fetches balance at most every 100 ticks)
+  placeholderUpdateRates: {}
+  # Distance-aware refresh culling for the periodic nametag placeholder refresh task.
+  # Nearest viewers keep behavior.taskInterval; farther owners still refresh, but less often.
+  distanceRefreshCulling:
+    # Enable distance-aware refresh intervals for far-away nametags.
+    enabled: true
+    # Distance in blocks up to which nametags use behavior.taskInterval.
+    nearDistance: 24.0
+    # Distance in blocks at/after which nametags use maxInterval.
+    maxDistance: 96.0
+    # Slowest refresh interval in ticks for far-away/no-viewer nametags.
+    maxInterval: 100
+    # Curve exponent for interval growth. 1 = linear, 2 = gentle near / stronger far.
+    curve: 2.0
+# Match PAPI output strings. Quote reserved YAML 1.1 words: use placeholder: "Yes" not Yes (otherwise they become booleans).
+placeholdersReplacements:
+  '%advancedvanish_is_vanished%':
+  - placeholder: Yes
+    replacement: ' &7[V]&r'
+  - placeholder: No
+    replacement: ''
+
+# Authors: AlexDev_
